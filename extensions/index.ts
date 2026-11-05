@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { loadConfig, resolveShortcuts } from "../src/config.ts";
 import { cycleFavorites, cycleThinkingLevel } from "../src/cycling.ts";
 import { openModelPickerModal } from "../src/picker.ts";
 
@@ -34,44 +35,67 @@ export default function modelSwitchExtension(pi: ExtensionAPI): void {
     // If /m is already registered by another extension, /model-switch remains available
   }
 
-  // Keyboard shortcut: Alt+M to open modal
-  pi.registerShortcut("alt+m", {
-    description: "Open favorite models picker modal",
-    handler: async (ctx) => {
-      await openModelPickerModal(pi, ctx);
-    },
-  });
+  const config = loadConfig();
+  const shortcuts = resolveShortcuts(config.shortcuts);
 
-  // Keyboard shortcut: Ctrl+Alt+P to cycle forward
-  pi.registerShortcut("ctrl+alt+p", {
-    description: "Cycle forward through favorite models",
-    handler: async (ctx) => {
-      await cycleFavorites(1, pi, ctx);
-    },
-  });
+  // Keyboard shortcut: Open modal
+  for (const sc of shortcuts.open) {
+    try {
+      pi.registerShortcut(sc as any, {
+        description: "Open favorite models picker modal",
+        handler: async (ctx) => {
+          await openModelPickerModal(pi, ctx);
+        },
+      });
+    } catch {}
+  }
 
-  // Keyboard shortcut: Ctrl+Alt+Shift+P to cycle backward
-  pi.registerShortcut("ctrl+alt+shift+p", {
-    description: "Cycle backward through favorite models",
-    handler: async (ctx) => {
-      await cycleFavorites(-1, pi, ctx);
-    },
-  });
+  // Keyboard shortcut: Cycle forward through favorites
+  for (const sc of shortcuts.cycleNext) {
+    try {
+      pi.registerShortcut(sc as any, {
+        description: "Cycle forward through favorite models",
+        handler: async (ctx) => {
+          await cycleFavorites(1, pi, ctx);
+        },
+      });
+    } catch {}
+  }
 
-  // Keyboard shortcut: Alt+T to cycle thinking level forward
-  pi.registerShortcut("alt+t", {
-    description: "Cycle thinking / effort level forward for current model",
-    handler: async (ctx) => {
-      await cycleThinkingLevel(1, pi, ctx);
-    },
-  });
+  // Keyboard shortcut: Cycle backward through favorites
+  for (const sc of shortcuts.cyclePrev) {
+    try {
+      pi.registerShortcut(sc as any, {
+        description: "Cycle backward through favorite models",
+        handler: async (ctx) => {
+          await cycleFavorites(-1, pi, ctx);
+        },
+      });
+    } catch {}
+  }
 
-  // Keyboard shortcut: Alt+Shift+T to cycle thinking level backward
-  pi.registerShortcut("alt+shift+t", {
-    description: "Cycle thinking / effort level backward for current model",
-    handler: async (ctx) => {
-      await cycleThinkingLevel(-1, pi, ctx);
-    },
-  });
+  // Keyboard shortcut: Cycle thinking level forward
+  for (const sc of shortcuts.thinkingNext) {
+    try {
+      pi.registerShortcut(sc as any, {
+        description: "Cycle thinking / effort level forward for current model",
+        handler: async (ctx) => {
+          await cycleThinkingLevel(1, pi, ctx);
+        },
+      });
+    } catch {}
+  }
+
+  // Keyboard shortcut: Cycle thinking level backward
+  for (const sc of shortcuts.thinkingPrev) {
+    try {
+      pi.registerShortcut(sc as any, {
+        description: "Cycle thinking / effort level backward for current model",
+        handler: async (ctx) => {
+          await cycleThinkingLevel(-1, pi, ctx);
+        },
+      });
+    } catch {}
+  }
 }
 

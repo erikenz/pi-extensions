@@ -1,8 +1,8 @@
 import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
 import { getAgentDir, SettingsManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
-import { loadConfig, modelKey, saveConfig } from "./config.ts";
-import type { PickerAction, Row, ThinkingAction, WindowSliceResult } from "./types.ts";
+import { DEFAULT_MODAL_KEYS, loadConfig, modelKey, resolveModalKeys, saveConfig } from "./config.ts";
+import type { PickerAction, ResolvedModalKeys, Row, ThinkingAction, WindowSliceResult } from "./types.ts";
 
 export const VISIBLE_ROWS = 10;
 
@@ -123,7 +123,30 @@ export function nearestSelectable(rows: Row[], target: number): number {
   return firstSelectable(rows);
 }
 
-export function resolvePickerAction(data: string, filtering: boolean): PickerAction {
+export function matchesAnyKey(data: string, bindings: string[]): boolean {
+  for (const b of bindings) {
+    if (data === b) {
+      return true;
+    }
+    if (b.length > 1 && data.toLowerCase() === b.toLowerCase()) {
+      return true;
+    }
+    try {
+      if (matchesKey(data, b as any)) {
+        return true;
+      }
+    } catch {
+      // ignore unrecognized key string
+    }
+  }
+  return false;
+}
+
+export function resolvePickerAction(
+  data: string,
+  filtering: boolean,
+  modalKeys: ResolvedModalKeys = DEFAULT_MODAL_KEYS,
+): PickerAction {
   if (filtering) {
     if (matchesKey(data, Key.escape)) {
       return { type: "filter_cancel" };
@@ -140,64 +163,67 @@ export function resolvePickerAction(data: string, filtering: boolean): PickerAct
     return { type: "ignore" };
   }
 
-  // Navigation mode (including vim-like j/k/g/G/q)
-  if (matchesKey(data, Key.up) || data === "k" || data === "K") {
+  // Navigation mode
+  if (matchesAnyKey(data, modalKeys.up)) {
     return { type: "move", delta: -1 };
   }
-  if (matchesKey(data, Key.down) || data === "j" || data === "J") {
+  if (matchesAnyKey(data, modalKeys.down)) {
     return { type: "move", delta: 1 };
   }
-  if (data === "g" || matchesKey(data, Key.home)) {
+  if (matchesAnyKey(data, modalKeys.first)) {
     return { type: "jump_first" };
   }
-  if (data === "G" || matchesKey(data, Key.end)) {
+  if (matchesAnyKey(data, modalKeys.last)) {
     return { type: "jump_last" };
   }
-  if (data.toLowerCase() === "t" || data.toLowerCase() === "e") {
+  if (matchesAnyKey(data, modalKeys.thinking)) {
     return { type: "open_thinking" };
   }
-  if (data.toLowerCase() === "f") {
+  if (matchesAnyKey(data, modalKeys.favorite)) {
     return { type: "toggle_fav" };
   }
-  if (data.toLowerCase() === "d") {
+  if (matchesAnyKey(data, modalKeys.default)) {
     return { type: "toggle_default" };
   }
-  if (data.toLowerCase() === "h") {
+  if (matchesAnyKey(data, modalKeys.hide)) {
     return { type: "toggle_hide" };
   }
-  if (data.toLowerCase() === "v") {
+  if (matchesAnyKey(data, modalKeys.toggleHidden)) {
     return { type: "toggle_show_hidden" };
   }
-  if (data === "/") {
+  if (matchesAnyKey(data, modalKeys.filter)) {
     return { type: "start_filter" };
   }
-  if (matchesKey(data, Key.enter)) {
+  if (matchesAnyKey(data, modalKeys.select)) {
     return { type: "select" };
   }
-  if (matchesKey(data, Key.escape) || data === "q" || data === "Q") {
+  if (matchesAnyKey(data, modalKeys.cancel)) {
     return { type: "cancel" };
   }
 
   return { type: "ignore" };
 }
 
-export function resolveThinkingAction(data: string): ThinkingAction {
-  if (matchesKey(data, Key.up) || data === "k" || data === "K") {
+export function resolveThinkingAction(
+  data: string,
+  modalKeys: ResolvedModalKeys = DEFAULT_MODAL_KEYS,
+): ThinkingAction {
+  if (matchesAnyKey(data, modalKeys.up)) {
     return { type: "move", delta: -1 };
   }
-  if (matchesKey(data, Key.down) || data === "j" || data === "J") {
+  if (matchesAnyKey(data, modalKeys.down)) {
     return { type: "move", delta: 1 };
   }
-  if (data === "g" || matchesKey(data, Key.home)) {
+  if (matchesAnyKey(data, modalKeys.first)) {
     return { type: "jump_first" };
   }
-  if (data === "G" || matchesKey(data, Key.end)) {
+  if (matchesAnyKey(data, modalKeys.last)) {
     return { type: "jump_last" };
   }
-  if (matchesKey(data, Key.enter)) {
+  if (matchesAnyKey(data, modalKeys.select)) {
     return { type: "select" };
   }
-  if (matchesKey(data, Key.escape) || data === "q" || data === "Q") {
+  if (matchesAnyKey(data, modalKeys.cancel)) {
     return { type: "cancel" };
   }
   return { type: "ignore" };
@@ -209,6 +235,7 @@ export async function openModelPickerModal(
   ctx: ExtensionContext,
 ): Promise<void> {
   const config = loadConfig();
+  const modalKeys = resolveModalKeys(config.modalKeys);
   const favSet = new Set(config.favorites);
   const hiddenSet = new Set(config.hidden);
   const modelThinking: Record<string, string> = { ...(config.modelThinking ?? {}) };
@@ -413,8 +440,32 @@ export async function openModelPickerModal(
             }
           }
 
+          const formatFirstKey = (keys: string[], fallback: string): string => {
+            if (!keys || keys.length === 0) return fallback;
+            return keys[0];
+          };
+
+          const formatNavHint = (keys: ResolvedModalKeys): string => {
+            const up = keys.up[0];
+            const down = keys.down[0];
+            if (up === "k" && down === "j") return "↑↓/jk";
+            return `${up || "↑"}${down || "↓"}`;
+          };
+
+          const formatCancelHint = (keys: string[]): string => {
+            if (keys.includes("q") && (keys.includes("escape") || keys.includes("esc"))) {
+              return "q/esc";
+            }
+            return keys[0] || "esc";
+          };
+
           lines.push("");
-          lines.push(theme.fg("dim", "↑↓/jk nav • enter select & apply • q/esc back"));
+          lines.push(
+            theme.fg(
+              "dim",
+              `${formatNavHint(modalKeys)} nav • ${formatFirstKey(modalKeys.select, "enter")} select & apply • ${formatCancelHint(modalKeys.cancel)} back`,
+            ),
+          );
           return lines.map((l) => truncateToWidth(l, Math.max(1, width)));
         }
 
@@ -475,10 +526,29 @@ export async function openModelPickerModal(
             theme.fg("accent", `filter: "${filter}"`) + theme.fg("dim", " • enter apply • esc clear"),
           );
         } else {
+          const formatFirstKey = (keys: string[], fallback: string): string => {
+            if (!keys || keys.length === 0) return fallback;
+            return keys[0];
+          };
+
+          const formatNavHint = (keys: ResolvedModalKeys): string => {
+            const up = keys.up[0];
+            const down = keys.down[0];
+            if (up === "k" && down === "j") return "↑↓/jk";
+            return `${up || "↑"}${down || "↓"}`;
+          };
+
+          const formatCancelHint = (keys: string[]): string => {
+            if (keys.includes("q") && (keys.includes("escape") || keys.includes("esc"))) {
+              return "q/esc";
+            }
+            return keys[0] || "esc";
+          };
+
           lines.push(
             theme.fg(
               "dim",
-              "↑↓/jk nav • enter select • t thinking • d default • f fav • h hide • v hidden • / filter • q/esc cancel",
+              `${formatNavHint(modalKeys)} nav • ${formatFirstKey(modalKeys.select, "enter")} select • ${formatFirstKey(modalKeys.thinking, "t")} thinking • ${formatFirstKey(modalKeys.default, "d")} default • ${formatFirstKey(modalKeys.favorite, "f")} fav • ${formatFirstKey(modalKeys.hide, "h")} hide • ${formatFirstKey(modalKeys.toggleHidden, "v")} hidden • ${formatFirstKey(modalKeys.filter, "/")} filter • ${formatCancelHint(modalKeys.cancel)} cancel`,
             ),
           );
         }
@@ -495,7 +565,7 @@ export async function openModelPickerModal(
 
       const handleInput = (data: string): void => {
         if (mode === "thinking") {
-          const action = resolveThinkingAction(data);
+          const action = resolveThinkingAction(data, modalKeys);
           switch (action.type) {
             case "move":
               if (thinkingLevels.length > 0) {
@@ -540,7 +610,7 @@ export async function openModelPickerModal(
           return;
         }
 
-        const action = resolvePickerAction(data, filtering);
+        const action = resolvePickerAction(data, filtering, modalKeys);
         switch (action.type) {
           case "filter_cancel":
             filter = "";

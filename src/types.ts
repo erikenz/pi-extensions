@@ -1,9 +1,59 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 
+export type KeyBindingSetting = string | string[] | null | false;
+
+export interface ShortcutConfig {
+  open?: KeyBindingSetting;
+  cycleNext?: KeyBindingSetting;
+  cyclePrev?: KeyBindingSetting;
+  thinkingNext?: KeyBindingSetting;
+  thinkingPrev?: KeyBindingSetting;
+}
+
+export interface ModalKeyConfig {
+  up?: KeyBindingSetting;
+  down?: KeyBindingSetting;
+  first?: KeyBindingSetting;
+  last?: KeyBindingSetting;
+  select?: KeyBindingSetting;
+  cancel?: KeyBindingSetting;
+  thinking?: KeyBindingSetting;
+  favorite?: KeyBindingSetting;
+  default?: KeyBindingSetting;
+  hide?: KeyBindingSetting;
+  toggleHidden?: KeyBindingSetting;
+  filter?: KeyBindingSetting;
+}
+
+export interface ResolvedShortcuts {
+  open: string[];
+  cycleNext: string[];
+  cyclePrev: string[];
+  thinkingNext: string[];
+  thinkingPrev: string[];
+}
+
+export interface ResolvedModalKeys {
+  up: string[];
+  down: string[];
+  first: string[];
+  last: string[];
+  select: string[];
+  cancel: string[];
+  thinking: string[];
+  favorite: string[];
+  default: string[];
+  hide: string[];
+  toggleHidden: string[];
+  filter: string[];
+}
+
 export interface ModelSwitchConfig {
   favorites: string[];
   hidden: string[];
   modelThinking?: Record<string, string>;
+  shortcuts?: ShortcutConfig;
+  modalKeys?: ModalKeyConfig;
 }
 
 export type Row =

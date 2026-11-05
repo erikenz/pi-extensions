@@ -90,9 +90,70 @@ ln -s ~/Projects/pi-model-switch/extensions/index.ts ~/.config/pi/agent/extensio
 | `/` | Inside Picker | Start filter / search |
 | `q` / `Esc` | Inside Picker | Cancel and close |
 
-
-
 ---
+
+## Customizing Keybindings & Shortcuts
+
+All global shortcuts and in-modal keys are fully configurable in `~/.config/pi/agent/model-switch.json`. 
+
+You can remap any shortcut, bind multiple keys to the same action, or set a shortcut to `null` to disable it completely.
+
+```json
+{
+  "shortcuts": {
+    "open": "alt+m",
+    "cycleNext": "ctrl+alt+p",
+    "cyclePrev": "ctrl+alt+shift+p",
+    "thinkingNext": "alt+t",
+    "thinkingPrev": "alt+shift+t"
+  },
+  "modalKeys": {
+    "up": ["k", "up"],
+    "down": ["j", "down"],
+    "first": ["g", "home"],
+    "last": ["G", "end"],
+    "select": ["enter"],
+    "cancel": ["q", "escape"],
+    "thinking": ["t", "e"],
+    "favorite": ["f"],
+    "default": ["d"],
+    "hide": ["h"],
+    "toggleHidden": ["v"],
+    "filter": ["/"]
+  }
+}
+```
+
+### Configuration Examples
+
+#### Replace Pi's Default Model Picker (`Ctrl+L`):
+```json
+{
+  "shortcuts": {
+    "open": "ctrl+l"
+  }
+}
+```
+
+#### Disable Direct Cycling Shortcuts:
+```json
+{
+  "shortcuts": {
+    "cycleNext": null,
+    "cyclePrev": null
+  }
+}
+```
+
+#### Colemak Navigation Inside Modal:
+```json
+{
+  "modalKeys": {
+    "up": ["u", "up"],
+    "down": ["e", "down"]
+  }
+}
+```
 
 ## Development & Testing
 

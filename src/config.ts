@@ -2,9 +2,94 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { ModelSwitchConfig } from "./types.ts";
+import type {
+  KeyBindingSetting,
+  ModalKeyConfig,
+  ModelSwitchConfig,
+  ResolvedModalKeys,
+  ResolvedShortcuts,
+  ShortcutConfig,
+} from "./types.ts";
 
 export const modelKey = (m: Model<Api>): string => `${m.provider}/${m.id}`;
+
+export const DEFAULT_SHORTCUTS: ResolvedShortcuts = {
+  open: ["alt+m"],
+  cycleNext: ["ctrl+alt+p"],
+  cyclePrev: ["ctrl+alt+shift+p"],
+  thinkingNext: ["alt+t"],
+  thinkingPrev: ["alt+shift+t"],
+};
+
+export const DEFAULT_MODAL_KEYS: ResolvedModalKeys = {
+  up: ["k", "K", "up"],
+  down: ["j", "J", "down"],
+  first: ["g", "home"],
+  last: ["G", "end", "shift+g"],
+  select: ["enter"],
+  cancel: ["q", "Q", "escape", "esc"],
+  thinking: ["t", "T", "e", "E"],
+  favorite: ["f", "F"],
+  default: ["d", "D"],
+  hide: ["h", "H"],
+  toggleHidden: ["v", "V"],
+  filter: ["/"],
+};
+
+export function normalizeKeyList(
+  setting: KeyBindingSetting | undefined,
+  fallback: string[],
+): string[] {
+  if (setting === undefined) {
+    return [...fallback];
+  }
+  if (setting === null || setting === false || setting === "") {
+    return [];
+  }
+  const rawList = Array.isArray(setting) ? setting : [setting];
+  const result: string[] = [];
+  for (const item of rawList) {
+    const trimmed = String(item).trim();
+    if (!trimmed) continue;
+    if (!result.includes(trimmed)) {
+      result.push(trimmed);
+    }
+    if (trimmed.length === 1 && /[a-zA-Z]/.test(trimmed) && trimmed !== "g" && trimmed !== "G") {
+      const alt = trimmed === trimmed.toLowerCase() ? trimmed.toUpperCase() : trimmed.toLowerCase();
+      if (!result.includes(alt)) {
+        result.push(alt);
+      }
+    }
+  }
+  return result;
+}
+
+export function resolveShortcuts(custom?: ShortcutConfig): ResolvedShortcuts {
+  return {
+    open: normalizeKeyList(custom?.open, DEFAULT_SHORTCUTS.open),
+    cycleNext: normalizeKeyList(custom?.cycleNext, DEFAULT_SHORTCUTS.cycleNext),
+    cyclePrev: normalizeKeyList(custom?.cyclePrev, DEFAULT_SHORTCUTS.cyclePrev),
+    thinkingNext: normalizeKeyList(custom?.thinkingNext, DEFAULT_SHORTCUTS.thinkingNext),
+    thinkingPrev: normalizeKeyList(custom?.thinkingPrev, DEFAULT_SHORTCUTS.thinkingPrev),
+  };
+}
+
+export function resolveModalKeys(custom?: ModalKeyConfig): ResolvedModalKeys {
+  return {
+    up: normalizeKeyList(custom?.up, DEFAULT_MODAL_KEYS.up),
+    down: normalizeKeyList(custom?.down, DEFAULT_MODAL_KEYS.down),
+    first: normalizeKeyList(custom?.first, DEFAULT_MODAL_KEYS.first),
+    last: normalizeKeyList(custom?.last, DEFAULT_MODAL_KEYS.last),
+    select: normalizeKeyList(custom?.select, DEFAULT_MODAL_KEYS.select),
+    cancel: normalizeKeyList(custom?.cancel, DEFAULT_MODAL_KEYS.cancel),
+    thinking: normalizeKeyList(custom?.thinking, DEFAULT_MODAL_KEYS.thinking),
+    favorite: normalizeKeyList(custom?.favorite, DEFAULT_MODAL_KEYS.favorite),
+    default: normalizeKeyList(custom?.default, DEFAULT_MODAL_KEYS.default),
+    hide: normalizeKeyList(custom?.hide, DEFAULT_MODAL_KEYS.hide),
+    toggleHidden: normalizeKeyList(custom?.toggleHidden, DEFAULT_MODAL_KEYS.toggleHidden),
+    filter: normalizeKeyList(custom?.filter, DEFAULT_MODAL_KEYS.filter),
+  };
+}
 
 export function configPath(): string {
   return join(getAgentDir(), "model-switch.json");
@@ -27,16 +112,40 @@ export function loadConfig(): ModelSwitchConfig {
         typeof parsed.modelThinking === "object" && parsed.modelThinking !== null
           ? (parsed.modelThinking as Record<string, string>)
           : {},
+      shortcuts:
+        typeof parsed.shortcuts === "object" && parsed.shortcuts !== null
+          ? (parsed.shortcuts as ShortcutConfig)
+          : undefined,
+      modalKeys:
+        typeof parsed.modalKeys === "object" && parsed.modalKeys !== null
+          ? (parsed.modalKeys as ModalKeyConfig)
+          : undefined,
     };
   } catch {
     return { favorites: [], hidden: [], modelThinking: {} };
   }
 }
 
-export function saveConfig(config: ModelSwitchConfig): void {
+export function saveConfig(newConfig: ModelSwitchConfig): void {
   try {
-    const content = JSON.stringify(config, null, 2);
-    writeFileSync(configPath(), content, "utf-8");
+    let existing: Partial<ModelSwitchConfig> = {};
+    const filePath = configPath();
+    if (existsSync(filePath)) {
+      try {
+        existing = JSON.parse(readFileSync(filePath, "utf-8")) as Partial<ModelSwitchConfig>;
+      } catch {
+        existing = {};
+      }
+    }
+    const merged: ModelSwitchConfig = {
+      favorites: newConfig.favorites,
+      hidden: newConfig.hidden,
+      modelThinking: newConfig.modelThinking ?? existing.modelThinking ?? {},
+      shortcuts: newConfig.shortcuts ?? existing.shortcuts,
+      modalKeys: newConfig.modalKeys ?? existing.modalKeys,
+    };
+    const content = JSON.stringify(merged, null, 2);
+    writeFileSync(filePath, content, "utf-8");
   } catch {
     // Best-effort: failures must not crash caller
   }

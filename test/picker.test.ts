@@ -170,5 +170,57 @@ describe("resolveThinkingAction", () => {
     assert.deepEqual(resolveThinkingAction("\u001b"), { type: "cancel" });
     assert.deepEqual(resolveThinkingAction("x"), { type: "ignore" });
   });
+
+  it("respects custom modalKeys for thinking mode", () => {
+    const customModalKeys = {
+      up: ["u"],
+      down: ["e"],
+      first: ["a"],
+      last: ["z"],
+      select: ["space"],
+      cancel: ["x"],
+      thinking: ["t"],
+      favorite: ["f"],
+      default: ["d"],
+      hide: ["h"],
+      toggleHidden: ["v"],
+      filter: ["/"],
+    };
+
+    assert.deepEqual(resolveThinkingAction("e", customModalKeys), { type: "move", delta: 1 });
+    assert.deepEqual(resolveThinkingAction("u", customModalKeys), { type: "move", delta: -1 });
+    assert.deepEqual(resolveThinkingAction("a", customModalKeys), { type: "jump_first" });
+    assert.deepEqual(resolveThinkingAction("z", customModalKeys), { type: "jump_last" });
+    assert.deepEqual(resolveThinkingAction("x", customModalKeys), { type: "cancel" });
+  });
+});
+
+describe("custom modalKeys in resolvePickerAction", () => {
+  it("uses custom navigation and action keys when provided", () => {
+    const customKeys = {
+      up: ["w"],
+      down: ["s"],
+      first: ["home"],
+      last: ["end"],
+      select: ["enter"],
+      cancel: ["x"],
+      thinking: ["m"],
+      favorite: ["p"],
+      default: ["*"],
+      hide: ["-"],
+      toggleHidden: ["="],
+      filter: ["?"],
+    };
+
+    assert.deepEqual(resolvePickerAction("w", false, customKeys), { type: "move", delta: -1 });
+    assert.deepEqual(resolvePickerAction("s", false, customKeys), { type: "move", delta: 1 });
+    assert.deepEqual(resolvePickerAction("m", false, customKeys), { type: "open_thinking" });
+    assert.deepEqual(resolvePickerAction("p", false, customKeys), { type: "toggle_fav" });
+    assert.deepEqual(resolvePickerAction("*", false, customKeys), { type: "toggle_default" });
+    assert.deepEqual(resolvePickerAction("-", false, customKeys), { type: "toggle_hide" });
+    assert.deepEqual(resolvePickerAction("=", false, customKeys), { type: "toggle_show_hidden" });
+    assert.deepEqual(resolvePickerAction("?", false, customKeys), { type: "start_filter" });
+    assert.deepEqual(resolvePickerAction("x", false, customKeys), { type: "cancel" });
+  });
 });
 
