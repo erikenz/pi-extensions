@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
@@ -228,6 +228,7 @@ export function saveConfig(
       modalKeys: newConfig.modalKeys ?? existing.modalKeys,
     };
     const content = JSON.stringify(merged, null, 2);
+    mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, content, "utf-8");
   } catch {
     // Best-effort: failures must not crash caller
