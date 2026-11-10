@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
@@ -34,6 +34,7 @@ export const DEFAULT_MODAL_KEYS: ResolvedModalKeys = {
   hide: ["h", "H"],
   toggleHidden: ["v", "V"],
   filter: ["/"],
+  block: ["b", "B"],
 };
 
 export function normalizeKeyList(
@@ -88,6 +89,7 @@ export function resolveModalKeys(custom?: ModalKeyConfig): ResolvedModalKeys {
     hide: normalizeKeyList(custom?.hide, DEFAULT_MODAL_KEYS.hide),
     toggleHidden: normalizeKeyList(custom?.toggleHidden, DEFAULT_MODAL_KEYS.toggleHidden),
     filter: normalizeKeyList(custom?.filter, DEFAULT_MODAL_KEYS.filter),
+    block: normalizeKeyList(custom?.block, DEFAULT_MODAL_KEYS.block),
   };
 }
 
@@ -95,19 +97,97 @@ export function configPath(): string {
   return join(getAgentDir(), "model-switch.json");
 }
 
+export function matchesBlockPattern(
+  pattern: string,
+  model: { provider: string; id: string },
+): boolean {
+  const p = pattern.trim();
+  if (!p) return false;
+
+  const key = `${model.provider}/${model.id}`.toLowerCase();
+  const id = model.id.toLowerCase();
+  const pLower = p.toLowerCase();
+
+  // Fast path for exact matches
+  if (pLower === key || (!pLower.includes("/") && pLower === id)) {
+    return true;
+  }
+
+  // If pattern contains glob wildcards (* or ?)
+  if (p.includes("*") || p.includes("?")) {
+    const escaped = pLower
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, ".*")
+      .replace(/\?/g, ".");
+    const regex = new RegExp(`^${escaped}$`, "i");
+
+    if (p.includes("/")) {
+      return regex.test(key);
+    }
+    return regex.test(key) || regex.test(id);
+  }
+
+  return pLower === key;
+}
+
+export function isModelBlocked(
+  model: { provider: string; id: string },
+  blocklist?: string[],
+): boolean {
+  if (!blocklist || !Array.isArray(blocklist) || blocklist.length === 0) {
+    return false;
+  }
+  return blocklist.some((pattern) => matchesBlockPattern(pattern, model));
+}
+
+export function addBlockedPattern(pattern: string): boolean {
+  const p = pattern.trim();
+  if (!p) return false;
+  const config = loadConfig();
+  const blocked = config.blocked ?? [];
+  if (blocked.includes(p)) return false;
+  blocked.push(p);
+  // Also remove exact or matching model keys from favorites
+  const favorites = config.favorites.filter((fav) => {
+    if (fav === p) return false;
+    const [provider, ...rest] = fav.split("/");
+    return !matchesBlockPattern(p, { provider, id: rest.join("/") });
+  });
+  saveConfig({ ...config, favorites, blocked });
+  return true;
+}
+
+export function removeBlockedPattern(pattern: string): boolean {
+  const p = pattern.trim();
+  if (!p) return false;
+  const config = loadConfig();
+  const blocked = config.blocked ?? [];
+  const idx = blocked.indexOf(p);
+  if (idx === -1) return false;
+  blocked.splice(idx, 1);
+  saveConfig({ ...config, blocked });
+  return true;
+}
+
 export function loadConfig(): ModelSwitchConfig {
   const filePath = configPath();
 
   if (!existsSync(filePath)) {
-    return { favorites: [], hidden: [] };
+    return { favorites: [], hidden: [], blocked: [] };
   }
 
   try {
     const raw = readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<ModelSwitchConfig>;
+    const parsed = JSON.parse(raw) as Partial<ModelSwitchConfig & { blocklist?: string[] }>;
+    const blocked = Array.isArray(parsed.blocked)
+      ? parsed.blocked
+      : Array.isArray(parsed.blocklist)
+        ? parsed.blocklist
+        : [];
     return {
       favorites: Array.isArray(parsed.favorites) ? parsed.favorites : [],
       hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
+      blocked,
       modelThinking:
         typeof parsed.modelThinking === "object" && parsed.modelThinking !== null
           ? (parsed.modelThinking as Record<string, string>)
@@ -122,17 +202,19 @@ export function loadConfig(): ModelSwitchConfig {
           : undefined,
     };
   } catch {
-    return { favorites: [], hidden: [], modelThinking: {} };
+    return { favorites: [], hidden: [], blocked: [], modelThinking: {} };
   }
 }
 
-export function saveConfig(newConfig: ModelSwitchConfig): void {
+export function saveConfig(
+  newConfig: Partial<ModelSwitchConfig> & { favorites: string[]; hidden: string[]; blocked?: string[] },
+): void {
   try {
-    let existing: Partial<ModelSwitchConfig> = {};
+    let existing: Partial<ModelSwitchConfig & { blocklist?: string[] }> = {};
     const filePath = configPath();
     if (existsSync(filePath)) {
       try {
-        existing = JSON.parse(readFileSync(filePath, "utf-8")) as Partial<ModelSwitchConfig>;
+        existing = JSON.parse(readFileSync(filePath, "utf-8")) as Partial<ModelSwitchConfig & { blocklist?: string[] }>;
       } catch {
         existing = {};
       }
@@ -140,11 +222,13 @@ export function saveConfig(newConfig: ModelSwitchConfig): void {
     const merged: ModelSwitchConfig = {
       favorites: newConfig.favorites,
       hidden: newConfig.hidden,
+      blocked: newConfig.blocked ?? existing.blocked ?? existing.blocklist ?? [],
       modelThinking: newConfig.modelThinking ?? existing.modelThinking ?? {},
       shortcuts: newConfig.shortcuts ?? existing.shortcuts,
       modalKeys: newConfig.modalKeys ?? existing.modalKeys,
     };
     const content = JSON.stringify(merged, null, 2);
+    mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, content, "utf-8");
   } catch {
     // Best-effort: failures must not crash caller

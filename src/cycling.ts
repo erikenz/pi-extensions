@@ -1,6 +1,6 @@
 import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadConfig, modelKey, saveConfig } from "./config.ts";
+import { isModelBlocked, loadConfig, modelKey, saveConfig } from "./config.ts";
 import { LEVEL_DESCRIPTIONS } from "./picker.ts";
 
 export function getNextFavoriteKey(
@@ -47,16 +47,27 @@ export async function cycleFavorites(
   ctx: ExtensionContext,
 ): Promise<boolean> {
   const config = loadConfig();
-  if (config.favorites.length === 0) {
+  const blockedList = config.blocked ?? [];
+
+  // Filter out any favorites that match the blocklist
+  const activeFavorites = config.favorites.filter((fav) => {
+    const [provider, ...rest] = fav.split("/");
+    const id = rest.join("/");
+    return !isModelBlocked({ provider, id }, blockedList);
+  });
+
+  if (activeFavorites.length === 0) {
     ctx.ui.notify(
-      "No favorite models configured. Press Alt+M and press 'f' on models to add favorites.",
+      config.favorites.length > 0
+        ? "All configured favorite models are currently blocked."
+        : "No favorite models configured. Press Alt+M and press 'f' on models to add favorites.",
       "warning",
     );
     return false;
   }
 
   const currentKey = ctx.model ? modelKey(ctx.model) : undefined;
-  const nextKey = getNextFavoriteKey(config.favorites, currentKey, direction);
+  const nextKey = getNextFavoriteKey(activeFavorites, currentKey, direction);
 
   if (!nextKey) return false;
 
@@ -66,6 +77,11 @@ export async function cycleFavorites(
   const targetModel = ctx.modelRegistry.find(provider, modelId);
   if (!targetModel) {
     ctx.ui.notify(`Model "${nextKey}" not found or provider not configured.`, "error");
+    return false;
+  }
+
+  if (isModelBlocked(targetModel, blockedList)) {
+    ctx.ui.notify(`Cannot switch to "${nextKey}": model is blocked.`, "warning");
     return false;
   }
 

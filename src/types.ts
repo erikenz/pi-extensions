@@ -23,6 +23,7 @@ export interface ModalKeyConfig {
   hide?: KeyBindingSetting;
   toggleHidden?: KeyBindingSetting;
   filter?: KeyBindingSetting;
+  block?: KeyBindingSetting;
 }
 
 export interface ResolvedShortcuts {
@@ -46,11 +47,13 @@ export interface ResolvedModalKeys {
   hide: string[];
   toggleHidden: string[];
   filter: string[];
+  block: string[];
 }
 
 export interface ModelSwitchConfig {
   favorites: string[];
   hidden: string[];
+  blocked: string[];
   modelThinking?: Record<string, string>;
   shortcuts?: ShortcutConfig;
   modalKeys?: ModalKeyConfig;
@@ -76,6 +79,7 @@ export type PickerAction =
   | { type: "toggle_default" }
   | { type: "toggle_hide" }
   | { type: "toggle_show_hidden" }
+  | { type: "toggle_block" }
   | { type: "start_filter" }
   | { type: "open_thinking" }
   | { type: "select" }

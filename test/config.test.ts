@@ -75,4 +75,71 @@ test("resolveModalKeys applies defaults and respects overrides", async () => {
   assert.deepEqual(custom.select, ["space"]);
   assert.deepEqual(custom.cancel, ["x", "X"]);
   assert.deepEqual(custom.thinking, DEFAULT_MODAL_KEYS.thinking);
+  assert.deepEqual(custom.block, DEFAULT_MODAL_KEYS.block);
+});
+
+test("matchesBlockPattern supports exact keys, model ids, and wildcards", async () => {
+  const { matchesBlockPattern } = await import("../src/config.ts");
+  const model = { provider: "openai", id: "gpt-4o" };
+
+  // Exact provider/id
+  assert.equal(matchesBlockPattern("openai/gpt-4o", model), true);
+  assert.equal(matchesBlockPattern("OPENAI/GPT-4O", model), true);
+  assert.equal(matchesBlockPattern("anthropic/claude", model), false);
+
+  // Exact bare id
+  assert.equal(matchesBlockPattern("gpt-4o", model), true);
+  assert.equal(matchesBlockPattern("gpt-4", model), false);
+
+  // Wildcards
+  assert.equal(matchesBlockPattern("openai/*", model), true);
+  assert.equal(matchesBlockPattern("ollama/*", model), false);
+  assert.equal(matchesBlockPattern("*gpt*", model), true);
+  assert.equal(matchesBlockPattern("*-4o", model), true);
+  assert.equal(matchesBlockPattern("openai/?pt-4o", model), true);
+  assert.equal(matchesBlockPattern("", model), false);
+});
+
+test("isModelBlocked returns true if model matches any blocklist pattern", async () => {
+  const { isModelBlocked } = await import("../src/config.ts");
+  const model = { provider: "ollama", id: "llama-3.1" };
+
+  assert.equal(isModelBlocked(model, []), false);
+  assert.equal(isModelBlocked(model, undefined), false);
+  assert.equal(isModelBlocked(model, ["openai/*", "anthropic/*"]), false);
+  assert.equal(isModelBlocked(model, ["openai/*", "ollama/*"]), true);
+  assert.equal(isModelBlocked(model, ["*llama*"]), true);
+});
+
+test("addBlockedPattern and removeBlockedPattern manage blocked list in config", async () => {
+  const { addBlockedPattern, removeBlockedPattern, loadConfig } = await import("../src/config.ts");
+
+  // Empty string handling
+  assert.equal(addBlockedPattern(""), false);
+  assert.equal(removeBlockedPattern(""), false);
+
+  const initial = loadConfig();
+  const testPattern = "test-provider/test-block-pattern";
+
+  // Ensure clean state
+  removeBlockedPattern(testPattern);
+
+  // Add pattern
+  assert.equal(addBlockedPattern(testPattern), true);
+  assert.equal(loadConfig().blocked.includes(testPattern), true);
+
+  // Adding duplicate returns false
+  assert.equal(addBlockedPattern(testPattern), false);
+
+  // Remove pattern
+  assert.equal(removeBlockedPattern(testPattern), true);
+  assert.equal(loadConfig().blocked.includes(testPattern), false);
+
+  // Removing non-existent returns false
+  assert.equal(removeBlockedPattern(testPattern), false);
+
+  // Restore original state
+  if (initial.blocked.includes(testPattern)) {
+    addBlockedPattern(testPattern);
+  }
 });

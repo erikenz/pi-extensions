@@ -1,22 +1,73 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { loadConfig, resolveShortcuts } from "../src/config.ts";
+import {
+  addBlockedPattern,
+  isModelBlocked,
+  loadConfig,
+  removeBlockedPattern,
+  resolveShortcuts,
+} from "../src/config.ts";
 import { cycleFavorites, cycleThinkingLevel } from "../src/cycling.ts";
 import { openModelPickerModal } from "../src/picker.ts";
 
 export default function modelSwitchExtension(pi: ExtensionAPI): void {
-  // Command: /model-switch [cycle [next|prev] | thinking [next|prev]]
+  // Command: /model-switch [cycle [next|prev] | thinking [next|prev] | block <id> | unblock <id> | blocked]
   pi.registerCommand("model-switch", {
-    description: "Open the favorite model picker modal, cycle favorites, or cycle thinking level",
+    description: "Open the favorite model picker modal, cycle favorites, manage blocklist, or cycle thinking level",
     handler: async (args, ctx) => {
-      const trimmed = (args || "").trim().toLowerCase();
-      if (trimmed === "cycle" || trimmed === "next" || trimmed === "cycle next") {
+      const raw = (args || "").trim();
+      const lower = raw.toLowerCase();
+      if (lower === "cycle" || lower === "next" || lower === "cycle next") {
         await cycleFavorites(1, pi, ctx);
-      } else if (trimmed === "prev" || trimmed === "previous" || trimmed === "cycle prev") {
+      } else if (lower === "prev" || lower === "previous" || lower === "cycle prev") {
         await cycleFavorites(-1, pi, ctx);
-      } else if (trimmed === "thinking" || trimmed === "thinking next" || trimmed === "t") {
+      } else if (lower === "thinking" || lower === "thinking next" || lower === "t") {
         await cycleThinkingLevel(1, pi, ctx);
-      } else if (trimmed === "thinking prev" || trimmed === "t prev") {
+      } else if (lower === "thinking prev" || lower === "t prev") {
         await cycleThinkingLevel(-1, pi, ctx);
+      } else if (lower.startsWith("block ")) {
+        const pattern = raw.slice(6).trim();
+        if (!pattern) {
+          ctx.ui.notify("Usage: /model-switch block <provider/model or glob pattern>", "warning");
+          return;
+        }
+        const added = addBlockedPattern(pattern);
+        if (added) {
+          ctx.ui.notify(`Blocked "${pattern}".`, "info");
+          if (ctx.model && isModelBlocked(ctx.model, [pattern])) {
+            const available = ctx.modelRegistry.getAvailable();
+            const configNow = loadConfig();
+            const fallback = available.find((m) => !isModelBlocked(m, configNow.blocked ?? []));
+            if (fallback) {
+              await pi.setModel(fallback);
+              ctx.ui.notify(
+                `Active model matched blocklist; switched to ${fallback.name || fallback.id}.`,
+                "info",
+              );
+            }
+          }
+        } else {
+          ctx.ui.notify(`"${pattern}" is already in the blocklist.`, "info");
+        }
+      } else if (lower.startsWith("unblock ")) {
+        const pattern = raw.slice(8).trim();
+        if (!pattern) {
+          ctx.ui.notify("Usage: /model-switch unblock <pattern>", "warning");
+          return;
+        }
+        const removed = removeBlockedPattern(pattern);
+        if (removed) {
+          ctx.ui.notify(`Unblocked "${pattern}".`, "info");
+        } else {
+          ctx.ui.notify(`"${pattern}" was not found in blocklist.`, "warning");
+        }
+      } else if (lower === "blocked" || lower === "list-blocked") {
+        const currentConfig = loadConfig();
+        const list = currentConfig.blocked ?? [];
+        if (list.length === 0) {
+          ctx.ui.notify("No models currently blocked.", "info");
+        } else {
+          ctx.ui.notify(`Blocked models/patterns (${list.length}):\n• ${list.join("\n• ")}`, "info");
+        }
       } else {
         await openModelPickerModal(pi, ctx);
       }
@@ -97,5 +148,72 @@ export default function modelSwitchExtension(pi: ExtensionAPI): void {
       });
     } catch {}
   }
+
+  // Global blocklist enforcement across Pi
+  let isEnforcing = false;
+
+  pi.on("model_select", async (event, ctx) => {
+    if (isEnforcing) return;
+    const currentConfig = loadConfig();
+    const blockedList = currentConfig.blocked ?? [];
+    if (blockedList.length === 0) return;
+
+    if (isModelBlocked(event.model, blockedList)) {
+      isEnforcing = true;
+      try {
+        ctx.ui.notify(
+          `Model ${event.model.name || event.model.id} (${event.model.provider}) is disabled by blocklist.`,
+          "error",
+        );
+        if (event.previousModel && !isModelBlocked(event.previousModel, blockedList)) {
+          await pi.setModel(event.previousModel);
+        } else {
+          const available = ctx.modelRegistry.getAvailable();
+          const fallback = available.find((m) => !isModelBlocked(m, blockedList));
+          if (fallback) {
+            await pi.setModel(fallback);
+          }
+        }
+      } finally {
+        isEnforcing = false;
+      }
+    }
+  });
+
+  pi.on("session_start", async (_event, ctx) => {
+    const currentConfig = loadConfig();
+    const blockedList = currentConfig.blocked ?? [];
+    if (blockedList.length === 0 || !ctx.model) return;
+
+    if (isModelBlocked(ctx.model, blockedList)) {
+      const available = ctx.modelRegistry.getAvailable();
+      const fallback = available.find((m) => !isModelBlocked(m, blockedList));
+      if (fallback) {
+        await pi.setModel(fallback);
+        ctx.ui.notify(
+          `Startup model ${ctx.model.name || ctx.model.id} is blocked by blocklist. Switched to ${fallback.name || fallback.id}.`,
+          "warning",
+        );
+      }
+    }
+  });
+
+  pi.on("before_agent_start", async (_event, ctx) => {
+    const currentConfig = loadConfig();
+    const blockedList = currentConfig.blocked ?? [];
+    if (blockedList.length === 0 || !ctx.model) return;
+
+    if (isModelBlocked(ctx.model, blockedList)) {
+      const available = ctx.modelRegistry.getAvailable();
+      const fallback = available.find((m) => !isModelBlocked(m, blockedList));
+      if (fallback) {
+        await pi.setModel(fallback);
+        ctx.ui.notify(
+          `Blocked model ${ctx.model.name || ctx.model.id} prevented from running turn. Switched to ${fallback.name || fallback.id}.`,
+          "warning",
+        );
+      }
+    }
+  });
 }
 

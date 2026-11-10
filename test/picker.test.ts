@@ -65,6 +65,20 @@ describe("buildRows", () => {
     assert.equal(rowsRevealed.length, 3); // 1 normal + 1 header + 1 hidden
     assert.equal(rowsRevealed[1].kind, "header");
   });
+
+  it("filters out blocked models completely", () => {
+    const m1: any = { provider: "anthropic", id: "sonnet", name: "Sonnet" };
+    const m2: any = { provider: "openai", id: "gpt-4", name: "GPT-4" };
+    const m3: any = { provider: "ollama", id: "llama3", name: "Llama 3" };
+
+    const favSet = new Set(["openai/gpt-4"]);
+    const hiddenSet = new Set<string>();
+
+    // Block openai/* and llama3
+    const rows = buildRows([m1, m2, m3], favSet, hiddenSet, true, ["openai/*", "llama3"]);
+    assert.equal(rows.length, 1);
+    if (rows[0].kind === "model") assert.equal(rows[0].model.id, "sonnet");
+  });
 });
 
 describe("windowSlice and clampScroll", () => {
@@ -131,6 +145,8 @@ describe("resolvePickerAction", () => {
     assert.deepEqual(resolvePickerAction("D", false), { type: "toggle_default" });
     assert.deepEqual(resolvePickerAction("h", false), { type: "toggle_hide" });
     assert.deepEqual(resolvePickerAction("v", false), { type: "toggle_show_hidden" });
+    assert.deepEqual(resolvePickerAction("b", false), { type: "toggle_block" });
+    assert.deepEqual(resolvePickerAction("B", false), { type: "toggle_block" });
     assert.deepEqual(resolvePickerAction("/", false), { type: "start_filter" });
     assert.deepEqual(resolvePickerAction("\r", false), { type: "select" });
     assert.deepEqual(resolvePickerAction("q", false), { type: "cancel" });
@@ -185,6 +201,7 @@ describe("resolveThinkingAction", () => {
       hide: ["h"],
       toggleHidden: ["v"],
       filter: ["/"],
+      block: ["b"],
     };
 
     assert.deepEqual(resolveThinkingAction("e", customModalKeys), { type: "move", delta: 1 });
@@ -210,6 +227,7 @@ describe("custom modalKeys in resolvePickerAction", () => {
       hide: ["-"],
       toggleHidden: ["="],
       filter: ["?"],
+      block: ["!"],
     };
 
     assert.deepEqual(resolvePickerAction("w", false, customKeys), { type: "move", delta: -1 });
@@ -219,6 +237,7 @@ describe("custom modalKeys in resolvePickerAction", () => {
     assert.deepEqual(resolvePickerAction("*", false, customKeys), { type: "toggle_default" });
     assert.deepEqual(resolvePickerAction("-", false, customKeys), { type: "toggle_hide" });
     assert.deepEqual(resolvePickerAction("=", false, customKeys), { type: "toggle_show_hidden" });
+    assert.deepEqual(resolvePickerAction("!", false, customKeys), { type: "toggle_block" });
     assert.deepEqual(resolvePickerAction("?", false, customKeys), { type: "start_filter" });
     assert.deepEqual(resolvePickerAction("x", false, customKeys), { type: "cancel" });
   });
