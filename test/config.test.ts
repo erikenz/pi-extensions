@@ -143,3 +143,30 @@ test("addBlockedPattern and removeBlockedPattern manage blocked list in config",
     addBlockedPattern(testPattern);
   }
 });
+
+test("loadConfig extracts disabled models from models dictionary format", async () => {
+  const { loadConfig, saveConfig } = await import("../src/config.ts");
+  const initial = loadConfig();
+
+  // Save config with models object containing disabled: true
+  saveConfig({
+    ...initial,
+    blocked: ["existing-blocked"],
+    ...({
+      models: {
+        "disabled-model-1": { disabled: true },
+        "enabled-model": { disabled: false },
+        "disabled-model-2": { disabled: true },
+      },
+    } as any),
+  });
+
+  const loaded = loadConfig();
+  assert.equal(loaded.blocked.includes("existing-blocked"), true);
+  assert.equal(loaded.blocked.includes("disabled-model-1"), true);
+  assert.equal(loaded.blocked.includes("disabled-model-2"), true);
+  assert.equal(loaded.blocked.includes("enabled-model"), false);
+
+  // Restore initial
+  saveConfig(initial);
+});

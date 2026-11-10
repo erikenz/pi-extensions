@@ -178,12 +178,22 @@ export function loadConfig(): ModelSwitchConfig {
 
   try {
     const raw = readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<ModelSwitchConfig & { blocklist?: string[] }>;
-    const blocked = Array.isArray(parsed.blocked)
-      ? parsed.blocked
+    const parsed = JSON.parse(raw) as Partial<ModelSwitchConfig & { blocklist?: string[]; models?: Record<string, { disabled?: boolean }> }>;
+    const blocked: string[] = Array.isArray(parsed.blocked)
+      ? [...parsed.blocked]
       : Array.isArray(parsed.blocklist)
-        ? parsed.blocklist
+        ? [...parsed.blocklist]
         : [];
+
+    if (typeof parsed.models === "object" && parsed.models !== null) {
+      for (const [key, val] of Object.entries(parsed.models)) {
+        if (typeof val === "object" && val !== null && val.disabled === true) {
+          if (!blocked.includes(key)) {
+            blocked.push(key);
+          }
+        }
+      }
+    }
     return {
       favorites: Array.isArray(parsed.favorites) ? parsed.favorites : [],
       hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
@@ -207,10 +217,16 @@ export function loadConfig(): ModelSwitchConfig {
 }
 
 export function saveConfig(
-  newConfig: Partial<ModelSwitchConfig> & { favorites: string[]; hidden: string[]; blocked?: string[] },
+  newConfig: Partial<ModelSwitchConfig & { models?: Record<string, { disabled?: boolean }> }> & {
+    favorites: string[];
+    hidden: string[];
+    blocked?: string[];
+  },
 ): void {
   try {
-    let existing: Partial<ModelSwitchConfig & { blocklist?: string[] }> = {};
+    let existing: Partial<
+      ModelSwitchConfig & { blocklist?: string[]; models?: Record<string, { disabled?: boolean }> }
+    > = {};
     const filePath = configPath();
     if (existsSync(filePath)) {
       try {
@@ -219,7 +235,7 @@ export function saveConfig(
         existing = {};
       }
     }
-    const merged: ModelSwitchConfig = {
+    const merged: ModelSwitchConfig & { models?: Record<string, { disabled?: boolean }> } = {
       favorites: newConfig.favorites,
       hidden: newConfig.hidden,
       blocked: newConfig.blocked ?? existing.blocked ?? existing.blocklist ?? [],
@@ -227,6 +243,9 @@ export function saveConfig(
       shortcuts: newConfig.shortcuts ?? existing.shortcuts,
       modalKeys: newConfig.modalKeys ?? existing.modalKeys,
     };
+    if ((newConfig as any).models ?? existing.models) {
+      merged.models = (newConfig as any).models ?? existing.models;
+    }
     const content = JSON.stringify(merged, null, 2);
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, content, "utf-8");
