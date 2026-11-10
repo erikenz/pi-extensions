@@ -29,10 +29,16 @@ Inspired by `@aiwayds/pi-model-favorites`, rewritten with dedicated global short
   - `d`: Set focused model as Pi's global default model (persists to `settings.json`).
   - `f`: Toggle favorite on the focused model.
   - `h`: Toggle hide on the focused model.
+  - `b`: Block focused model (permanently hides it from the picker and disables it across Pi).
   - `v`: Expand/collapse hidden models list.
   - `/`: Live fuzzy filter (type to search; `Enter` to apply, `Esc` to clear).
+- 🛡️ **Model Blocklist & Pi-Wide Enforcement**:
+  - Exclude models completely from the picker using exact `provider/id` or wildcard/glob patterns (`ollama/*`, `*deprecated*`, etc.).
+  - Blocked models are omitted from favorite cycling (`Ctrl+Alt+P` / `Ctrl+Alt+Shift+P`).
+  - Intercepts Pi's global model selection and startup events (`model_select`, `session_start`, `before_agent_start`) to prevent blocked models from being selected or used anywhere in Pi.
+  - Manage blocked models directly with `b` in the picker or via `/model-switch block <pattern>`, `/model-switch unblock <pattern>`, and `/model-switch blocked`.
 - 💾 **Clean, Self-Contained Storage**:
-  - Saves favorite, hidden, and per-model thinking preferences directly to `~/.config/pi/agent/model-switch.json`.
+  - Saves favorite, hidden, blocked, and per-model thinking preferences directly to `~/.config/pi/agent/model-switch.json`.
 
 ---
 
@@ -76,7 +82,7 @@ ln -s ~/Projects/pi-model-switch/extensions/index.ts ~/.config/pi/agent/extensio
 | `Alt+Shift+T` | Global | Cycle thinking / effort level backward for current model |
 | `Ctrl+Alt+P` | Global | Cycle forward to the next favorite model (applies saved thinking level) |
 | `Ctrl+Alt+Shift+P` | Global | Cycle backward to the previous favorite model |
-| `/m` or `/model-switch` | Slash command | Open picker modal (`cycle [next\|prev]`, `thinking [next\|prev]` also available) |
+| `/m` or `/model-switch` | Slash command | Open picker modal (`cycle [next\|prev]`, `thinking [next\|prev]`, `block <pattern>`, `unblock <pattern>`, `blocked` also available) |
 | `j` / `↓` | Inside Picker | Move cursor down |
 | `k` / `↑` | Inside Picker | Move cursor up |
 | `g` / `Home` | Inside Picker | Jump to top |
@@ -86,6 +92,7 @@ ln -s ~/Projects/pi-model-switch/extensions/index.ts ~/.config/pi/agent/extensio
 | `d` | Inside Picker | Set focused model as Pi's default startup model |
 | `f` | Inside Picker | Toggle favorite status |
 | `h` | Inside Picker | Toggle hidden status |
+| `b` | Inside Picker | Block focused model from picker and Pi |
 | `v` | Inside Picker | Toggle show/hide hidden models |
 | `/` | Inside Picker | Start filter / search |
 | `q` / `Esc` | Inside Picker | Cancel and close |
@@ -118,6 +125,7 @@ You can remap any shortcut, bind multiple keys to the same action, or set a shor
     "favorite": ["f"],
     "default": ["d"],
     "hide": ["h"],
+    "block": ["b"],
     "toggleHidden": ["v"],
     "filter": ["/"]
   }
@@ -125,6 +133,17 @@ You can remap any shortcut, bind multiple keys to the same action, or set a shor
 ```
 
 ### Configuration Examples
+
+#### Block Models (Exact or Wildcards):
+```json
+{
+  "blocked": [
+    "openai/gpt-4o",
+    "ollama/*",
+    "*deprecated*"
+  ]
+}
+```
 
 #### Replace Pi's Default Model Picker (`Ctrl+L`):
 ```json

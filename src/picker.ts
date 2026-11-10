@@ -1,7 +1,7 @@
 import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
 import { getAgentDir, SettingsManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
-import { DEFAULT_MODAL_KEYS, loadConfig, modelKey, resolveModalKeys, saveConfig } from "./config.ts";
+import { DEFAULT_MODAL_KEYS, isModelBlocked, loadConfig, modelKey, resolveModalKeys, saveConfig } from "./config.ts";
 import type { PickerAction, ResolvedModalKeys, Row, ThinkingAction, WindowSliceResult } from "./types.ts";
 
 export const VISIBLE_ROWS = 10;
@@ -30,21 +30,23 @@ export function buildRows(
   favSet: Set<string>,
   hiddenSet: Set<string>,
   showHidden: boolean,
+  blockedList: string[] = [],
 ): Row[] {
+  const visibleModels = models.filter((m) => !isModelBlocked(m, blockedList));
   const isFav = (m: Model<Api>): boolean => favSet.has(modelKey(m));
   const isHid = (m: Model<Api>): boolean => hiddenSet.has(modelKey(m));
   const rows: Row[] = [];
 
-  const favs = models.filter((m) => isFav(m) && !isHid(m));
+  const favs = visibleModels.filter((m) => isFav(m) && !isHid(m));
   for (const m of favs) rows.push({ kind: "model", model: m });
 
   if (favs.length > 0) rows.push({ kind: "divider" });
 
-  for (const m of models.filter((m) => !isFav(m) && !isHid(m))) {
+  for (const m of visibleModels.filter((m) => !isFav(m) && !isHid(m))) {
     rows.push({ kind: "model", model: m });
   }
 
-  const hidden = models.filter(isHid);
+  const hidden = visibleModels.filter(isHid);
   if (showHidden && hidden.length > 0) {
     rows.push({ kind: "header", label: "─ Hidden (v to collapse) ─" });
     for (const m of hidden) rows.push({ kind: "model", model: m });
@@ -191,6 +193,9 @@ export function resolvePickerAction(
   if (matchesAnyKey(data, modalKeys.toggleHidden)) {
     return { type: "toggle_show_hidden" };
   }
+  if (matchesAnyKey(data, modalKeys.block)) {
+    return { type: "toggle_block" };
+  }
   if (matchesAnyKey(data, modalKeys.filter)) {
     return { type: "start_filter" };
   }
@@ -238,6 +243,7 @@ export async function openModelPickerModal(
   const modalKeys = resolveModalKeys(config.modalKeys);
   const favSet = new Set(config.favorites);
   const hiddenSet = new Set(config.hidden);
+  const blockedList = [...(config.blocked ?? [])];
   const modelThinking: Record<string, string> = { ...(config.modelThinking ?? {}) };
   const models = sortModels(ctx.modelRegistry.getAvailable());
   const currentKey = ctx.model ? modelKey(ctx.model) : undefined;
@@ -274,7 +280,7 @@ export async function openModelPickerModal(
       };
 
       const computeRows = (): Row[] =>
-        buildRows(models.filter(matches), favSet, hiddenSet, showHidden);
+        buildRows(models.filter(matches), favSet, hiddenSet, showHidden, blockedList);
       let rows = computeRows();
       let cursor = firstSelectable(rows);
       let favScroll = 0;
@@ -305,7 +311,7 @@ export async function openModelPickerModal(
           favSet.add(key);
           hiddenSet.delete(key);
         }
-        saveConfig({ favorites: [...favSet], hidden: [...hiddenSet], modelThinking });
+        saveConfig({ favorites: [...favSet], hidden: [...hiddenSet], blocked: blockedList, modelThinking });
         rebuild();
         version++;
         tui.requestRender();
@@ -345,10 +351,33 @@ export async function openModelPickerModal(
           hiddenSet.add(key);
           favSet.delete(key);
         }
-        saveConfig({ favorites: [...favSet], hidden: [...hiddenSet], modelThinking });
+        saveConfig({ favorites: [...favSet], hidden: [...hiddenSet], blocked: blockedList, modelThinking });
         rebuild();
         version++;
         tui.requestRender();
+      };
+
+      const toggleBlock = (): void => {
+        const m = focusedModel();
+        if (!m) return;
+        const key = modelKey(m);
+        if (!blockedList.includes(key)) {
+          blockedList.push(key);
+          favSet.delete(key);
+          hiddenSet.delete(key);
+          saveConfig({
+            favorites: [...favSet],
+            hidden: [...hiddenSet],
+            blocked: blockedList,
+            modelThinking,
+            shortcuts: config.shortcuts,
+            modalKeys: config.modalKeys,
+          });
+          ctx.ui.notify(`Blocked ${m.name || m.id} (${m.provider})`, "info");
+          rebuild();
+          version++;
+          tui.requestRender();
+        }
       };
 
       const updateScroll = (): void => {
@@ -548,7 +577,7 @@ export async function openModelPickerModal(
           lines.push(
             theme.fg(
               "dim",
-              `${formatNavHint(modalKeys)} nav • ${formatFirstKey(modalKeys.select, "enter")} select • ${formatFirstKey(modalKeys.thinking, "t")} thinking • ${formatFirstKey(modalKeys.default, "d")} default • ${formatFirstKey(modalKeys.favorite, "f")} fav • ${formatFirstKey(modalKeys.hide, "h")} hide • ${formatFirstKey(modalKeys.toggleHidden, "v")} hidden • ${formatFirstKey(modalKeys.filter, "/")} filter • ${formatCancelHint(modalKeys.cancel)} cancel`,
+              `${formatNavHint(modalKeys)} nav • ${formatFirstKey(modalKeys.select, "enter")} select • ${formatFirstKey(modalKeys.thinking, "t")} thinking • ${formatFirstKey(modalKeys.default, "d")} default • ${formatFirstKey(modalKeys.favorite, "f")} fav • ${formatFirstKey(modalKeys.hide, "h")} hide • ${formatFirstKey(modalKeys.block, "b")} block • ${formatFirstKey(modalKeys.toggleHidden, "v")} hidden • ${formatFirstKey(modalKeys.filter, "/")} filter • ${formatCancelHint(modalKeys.cancel)} cancel`,
             ),
           );
         }
@@ -592,7 +621,7 @@ export async function openModelPickerModal(
               const chosenLevel = thinkingLevels[thinkingCursor];
               if (thinkingModel && chosenLevel) {
                 modelThinking[modelKey(thinkingModel)] = chosenLevel;
-                saveConfig({ favorites: [...favSet], hidden: [...hiddenSet], modelThinking });
+                saveConfig({ favorites: [...favSet], hidden: [...hiddenSet], blocked: blockedList, modelThinking });
                 done({ model: thinkingModel, thinkingLevel: chosenLevel });
               }
               break;
@@ -662,6 +691,9 @@ export async function openModelPickerModal(
             break;
           case "toggle_hide":
             toggleHidden();
+            break;
+          case "toggle_block":
+            toggleBlock();
             break;
           case "toggle_show_hidden":
             showHidden = !showHidden;

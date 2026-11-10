@@ -1,6 +1,6 @@
 {
   "name": "@erikenz/pi-model-switch",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Fast model picker and favorite model cycling shortcuts for the Pi coding agent.",
   "keywords": [
     "pi-package",
