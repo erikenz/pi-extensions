@@ -112,61 +112,76 @@ test("isModelBlocked returns true if model matches any blocklist pattern", async
 });
 
 test("addBlockedPattern and removeBlockedPattern manage blocked list in config", async () => {
-  const { addBlockedPattern, removeBlockedPattern, loadConfig } = await import("../src/config.ts");
+  const fs = await import("node:fs");
+  const { addBlockedPattern, removeBlockedPattern, loadConfig, configPath } = await import("../src/config.ts");
 
   // Empty string handling
   assert.equal(addBlockedPattern(""), false);
   assert.equal(removeBlockedPattern(""), false);
 
-  const initial = loadConfig();
-  const testPattern = "test-provider/test-block-pattern";
+  const p = configPath();
+  const backup = fs.existsSync(p) ? fs.readFileSync(p, "utf-8") : null;
 
-  // Ensure clean state
-  removeBlockedPattern(testPattern);
+  try {
+    const testPattern = "test-provider/test-block-pattern";
 
-  // Add pattern
-  assert.equal(addBlockedPattern(testPattern), true);
-  assert.equal(loadConfig().blocked.includes(testPattern), true);
+    // Ensure clean state
+    removeBlockedPattern(testPattern);
 
-  // Adding duplicate returns false
-  assert.equal(addBlockedPattern(testPattern), false);
+    // Add pattern
+    assert.equal(addBlockedPattern(testPattern), true);
+    assert.equal(loadConfig().blocked.includes(testPattern), true);
 
-  // Remove pattern
-  assert.equal(removeBlockedPattern(testPattern), true);
-  assert.equal(loadConfig().blocked.includes(testPattern), false);
+    // Adding duplicate returns false
+    assert.equal(addBlockedPattern(testPattern), false);
 
-  // Removing non-existent returns false
-  assert.equal(removeBlockedPattern(testPattern), false);
+    // Remove pattern
+    assert.equal(removeBlockedPattern(testPattern), true);
+    assert.equal(loadConfig().blocked.includes(testPattern), false);
 
-  // Restore original state
-  if (initial.blocked.includes(testPattern)) {
-    addBlockedPattern(testPattern);
+    // Removing non-existent returns false
+    assert.equal(removeBlockedPattern(testPattern), false);
+  } finally {
+    if (backup !== null) {
+      fs.writeFileSync(p, backup, "utf-8");
+    } else if (fs.existsSync(p)) {
+      fs.unlinkSync(p);
+    }
   }
 });
 
 test("loadConfig extracts disabled models from models dictionary format", async () => {
-  const { loadConfig, saveConfig } = await import("../src/config.ts");
-  const initial = loadConfig();
+  const fs = await import("node:fs");
+  const { loadConfig, saveConfig, configPath } = await import("../src/config.ts");
+  const p = configPath();
+  const backup = fs.existsSync(p) ? fs.readFileSync(p, "utf-8") : null;
 
-  // Save config with models object containing disabled: true
-  saveConfig({
-    ...initial,
-    blocked: ["existing-blocked"],
-    ...({
-      models: {
-        "disabled-model-1": { disabled: true },
-        "enabled-model": { disabled: false },
-        "disabled-model-2": { disabled: true },
-      },
-    } as any),
-  });
+  try {
+    const initial = loadConfig();
 
-  const loaded = loadConfig();
-  assert.equal(loaded.blocked.includes("existing-blocked"), true);
-  assert.equal(loaded.blocked.includes("disabled-model-1"), true);
-  assert.equal(loaded.blocked.includes("disabled-model-2"), true);
-  assert.equal(loaded.blocked.includes("enabled-model"), false);
+    // Save config with models object containing disabled: true
+    saveConfig({
+      ...initial,
+      blocked: ["existing-blocked"],
+      ...({
+        models: {
+          "disabled-model-1": { disabled: true },
+          "enabled-model": { disabled: false },
+          "disabled-model-2": { disabled: true },
+        },
+      } as any),
+    });
 
-  // Restore initial
-  saveConfig(initial);
+    const loaded = loadConfig();
+    assert.equal(loaded.blocked.includes("existing-blocked"), true);
+    assert.equal(loaded.blocked.includes("disabled-model-1"), true);
+    assert.equal(loaded.blocked.includes("disabled-model-2"), true);
+    assert.equal(loaded.blocked.includes("enabled-model"), false);
+  } finally {
+    if (backup !== null) {
+      fs.writeFileSync(p, backup, "utf-8");
+    } else if (fs.existsSync(p)) {
+      fs.unlinkSync(p);
+    }
+  }
 });
