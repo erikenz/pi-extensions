@@ -1,23 +1,44 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { test } from "node:test";
-import { modelKey } from "../src/config.ts";
 
-test("modelKey formats provider and id correctly", () => {
-  const mockModel: any = { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" };
+import {
+  addBlockedPattern,
+  configPath,
+  DEFAULT_MODAL_KEYS,
+  DEFAULT_SHORTCUTS,
+  isModelBlocked,
+  loadConfig,
+  matchesBlockPattern,
+  modelKey,
+  normalizeKeyList,
+  removeBlockedPattern,
+  resolveModalKeys,
+  resolveShortcuts,
+  saveConfig,
+} from "../src/config.ts";
+
+void test("modelKey formats provider and id correctly", () => {
+  const mockModel = {
+    id: "claude-sonnet-4-5",
+    name: "Claude Sonnet 4.5",
+    provider: "anthropic",
+  };
   assert.equal(modelKey(mockModel), "anthropic/claude-sonnet-4-5");
 });
 
-test("configPath points to model-switch.json", async () => {
-  const { configPath } = await import("../src/config.ts");
-  assert.match(configPath(), /model-switch\.json$/);
+void test("configPath points to model-switch.json", () => {
+  assert.match(configPath(), /model-switch\.json$/u);
 });
 
-test("normalizeKeyList handles fallbacks, strings, arrays, and disabled states", async () => {
-  const { normalizeKeyList } = await import("../src/config.ts");
+void test("normalizeKeyList handles fallbacks, strings, arrays, and disabled states", () => {
   const fallback = ["default1", "default2"];
 
   // Undefined uses fallback
-  assert.deepEqual(normalizeKeyList(undefined, fallback), ["default1", "default2"]);
+  assert.deepEqual(normalizeKeyList(undefined, fallback), [
+    "default1",
+    "default2",
+  ]);
 
   // Null, false, empty string disable keybinding
   assert.deepEqual(normalizeKeyList(null, fallback), []);
@@ -34,18 +55,17 @@ test("normalizeKeyList handles fallbacks, strings, arrays, and disabled states",
   ]);
 });
 
-test("resolveShortcuts applies defaults and respects overrides / disabling", async () => {
-  const { resolveShortcuts, DEFAULT_SHORTCUTS } = await import("../src/config.ts");
-
+void test("resolveShortcuts applies defaults and respects overrides / disabling", () => {
   // Empty config -> default shortcuts
   const resolvedDefault = resolveShortcuts(undefined);
   assert.deepEqual(resolvedDefault, DEFAULT_SHORTCUTS);
 
   // Partial override
+  // cycleNext explicitly disabled
   const custom = resolveShortcuts({
-    open: "ctrl+l",
-    cycleNext: null, // explicitly disabled
+    cycleNext: null,
     cyclePrev: ["ctrl+alt+k", "ctrl+alt+shift+p"],
+    open: "ctrl+l",
   });
 
   assert.deepEqual(custom.open, ["ctrl+l"]);
@@ -55,19 +75,17 @@ test("resolveShortcuts applies defaults and respects overrides / disabling", asy
   assert.deepEqual(custom.thinkingPrev, DEFAULT_SHORTCUTS.thinkingPrev);
 });
 
-test("resolveModalKeys applies defaults and respects overrides", async () => {
-  const { resolveModalKeys, DEFAULT_MODAL_KEYS } = await import("../src/config.ts");
-
+void test("resolveModalKeys applies defaults and respects overrides", () => {
   // Empty config -> default modal keys
   const resolvedDefault = resolveModalKeys(undefined);
   assert.deepEqual(resolvedDefault, DEFAULT_MODAL_KEYS);
 
   // Custom modal keys
   const custom = resolveModalKeys({
-    up: ["u", "up"],
+    cancel: "x",
     down: ["e", "down"],
     select: ["space"],
-    cancel: "x",
+    up: ["u", "up"],
   });
 
   assert.deepEqual(custom.up, ["u", "U", "up"]);
@@ -78,9 +96,8 @@ test("resolveModalKeys applies defaults and respects overrides", async () => {
   assert.deepEqual(custom.block, DEFAULT_MODAL_KEYS.block);
 });
 
-test("matchesBlockPattern supports exact keys, model ids, and wildcards", async () => {
-  const { matchesBlockPattern } = await import("../src/config.ts");
-  const model = { provider: "openai", id: "gpt-4o" };
+void test("matchesBlockPattern supports exact keys, model ids, and wildcards", () => {
+  const model = { id: "gpt-4o", provider: "openai" };
 
   // Exact provider/id
   assert.equal(matchesBlockPattern("openai/gpt-4o", model), true);
@@ -100,9 +117,8 @@ test("matchesBlockPattern supports exact keys, model ids, and wildcards", async 
   assert.equal(matchesBlockPattern("", model), false);
 });
 
-test("isModelBlocked returns true if model matches any blocklist pattern", async () => {
-  const { isModelBlocked } = await import("../src/config.ts");
-  const model = { provider: "ollama", id: "llama-3.1" };
+void test("isModelBlocked returns true if model matches any blocklist pattern", () => {
+  const model = { id: "llama-3.1", provider: "ollama" };
 
   assert.equal(isModelBlocked(model, []), false);
   assert.equal(isModelBlocked(model, undefined), false);
@@ -111,10 +127,7 @@ test("isModelBlocked returns true if model matches any blocklist pattern", async
   assert.equal(isModelBlocked(model, ["*llama*"]), true);
 });
 
-test("addBlockedPattern and removeBlockedPattern manage blocked list in config", async () => {
-  const fs = await import("node:fs");
-  const { addBlockedPattern, removeBlockedPattern, loadConfig, configPath } = await import("../src/config.ts");
-
+void test("addBlockedPattern and removeBlockedPattern manage blocked list in config", () => {
   // Empty string handling
   assert.equal(addBlockedPattern(""), false);
   assert.equal(removeBlockedPattern(""), false);
@@ -150,9 +163,7 @@ test("addBlockedPattern and removeBlockedPattern manage blocked list in config",
   }
 });
 
-test("loadConfig extracts disabled models from models dictionary format", async () => {
-  const fs = await import("node:fs");
-  const { loadConfig, saveConfig, configPath } = await import("../src/config.ts");
+void test("loadConfig extracts disabled models from models dictionary format", () => {
   const p = configPath();
   const backup = fs.existsSync(p) ? fs.readFileSync(p, "utf-8") : null;
 
@@ -163,13 +174,11 @@ test("loadConfig extracts disabled models from models dictionary format", async 
     saveConfig({
       ...initial,
       blocked: ["existing-blocked"],
-      ...({
-        models: {
-          "disabled-model-1": { disabled: true },
-          "enabled-model": { disabled: false },
-          "disabled-model-2": { disabled: true },
-        },
-      } as any),
+      models: {
+        "disabled-model-1": { disabled: true },
+        "disabled-model-2": { disabled: true },
+        "enabled-model": { disabled: false },
+      },
     });
 
     const loaded = loadConfig();

@@ -5,12 +5,14 @@ Thank you for your interest in contributing! This project is an open-source exte
 ## Development Setup
 
 1. **Fork and clone** this repository:
+
    ```bash
    git clone https://github.com/<your-username>/pi-model-switch.git
    cd pi-model-switch
    ```
 
 2. **Install dependencies**:
+
    ```bash
    pnpm install
    ```

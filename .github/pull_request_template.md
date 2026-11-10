@@ -5,13 +5,13 @@
 ## Evidence
 
 <!-- Provide concrete evidence that the change works (test run output, before/after comparisons). -->
+
 - **Before:**
 - **After:**
 
 ## Merge Danger
 
-**Door:** <!-- one-way or two-way -->
-**Blast Radius:** <!-- localized, broad, none -->
+**Door:** <!-- one-way or two-way --> **Blast Radius:** <!-- localized, broad, none -->
 
 <!-- Any notes on potential side effects or breaking changes -->
 

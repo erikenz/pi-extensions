@@ -50,9 +50,7 @@ Add to your `~/.config/pi/agent/settings.json`:
 
 ```json
 {
-  "packages": [
-    "npm:@erikenz/pi-model-switch"
-  ]
+  "packages": ["npm:@erikenz/pi-model-switch"]
 }
 ```
 
@@ -101,7 +99,7 @@ ln -s ~/Projects/pi-model-switch/extensions/index.ts ~/.config/pi/agent/extensio
 
 ## Customizing Keybindings & Shortcuts
 
-All global shortcuts and in-modal keys are fully configurable in `~/.config/pi/agent/model-switch.json`. 
+All global shortcuts and in-modal keys are fully configurable in `~/.config/pi/agent/model-switch.json`.
 
 You can remap any shortcut, bind multiple keys to the same action, or set a shortcut to `null` to disable it completely.
 
@@ -134,18 +132,26 @@ You can remap any shortcut, bind multiple keys to the same action, or set a shor
 
 ### Configuration Examples
 
-#### Block Models (Exact or Wildcards):
+#### Block Models (Provider-Specific, Global, or Wildcards):
+
+- **Provider-specific**: `"opencode-go/gemini-4-argon"` or `"opencode*/gemini-4-argon"` blocks Argon only from OpenCode while allowing it from other providers (e.g. Antigravity ACP).
+- **All providers**: `"gemini-4-argon"` (without a slash) blocks the model across all providers.
+- **Provider-wide**: `"ollama/*"` blocks all models from a given provider.
+- **Wildcard glob**: `"*deprecated*"` or `"*-preview"`.
+
 ```json
 {
   "blocked": [
-    "openai/gpt-4o",
+    "opencode*/gemini-4-argon",
     "ollama/*",
+    "gpt-6-luna",
     "*deprecated*"
   ]
 }
 ```
 
 #### Replace Pi's Default Model Picker (`Ctrl+L`):
+
 ```json
 {
   "shortcuts": {
@@ -155,6 +161,7 @@ You can remap any shortcut, bind multiple keys to the same action, or set a shor
 ```
 
 #### Disable Direct Cycling Shortcuts:
+
 ```json
 {
   "shortcuts": {
@@ -165,6 +172,7 @@ You can remap any shortcut, bind multiple keys to the same action, or set a shor
 ```
 
 #### Colemak Navigation Inside Modal:
+
 ```json
 {
   "modalKeys": {

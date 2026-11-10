@@ -1,35 +1,46 @@
-import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { isModelBlocked, loadConfig, modelKey, saveConfig } from "./config.ts";
-import { LEVEL_DESCRIPTIONS } from "./picker.ts";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
-export function getNextFavoriteKey(
+import { isModelBlocked, loadConfig, modelKey, saveConfig } from "./config.ts";
+import { isThinkingLevel, LEVEL_DESCRIPTIONS } from "./types.ts";
+
+export const getNextFavoriteKey = (
   favorites: string[],
   currentKey: string | undefined,
-  direction: 1 | -1,
-): string | null {
-  if (!favorites || favorites.length === 0) return null;
+  direction: 1 | -1
+): string | null => {
+  if (favorites.length === 0) {
+    return null;
+  }
 
-  const currentIndex = currentKey ? favorites.indexOf(currentKey) : -1;
+  const currentIndex =
+    currentKey === undefined ? -1 : favorites.indexOf(currentKey);
   let nextIndex: number;
 
   if (currentIndex === -1) {
     nextIndex = direction === 1 ? 0 : favorites.length - 1;
   } else {
-    nextIndex = (currentIndex + direction + favorites.length) % favorites.length;
+    nextIndex =
+      (currentIndex + direction + favorites.length) % favorites.length;
   }
 
-  return favorites[nextIndex];
-}
+  return favorites[nextIndex] ?? null;
+};
 
-export function getNextThinkingLevel(
+export const getNextThinkingLevel = (
   levels: string[],
   currentLevel: string | undefined,
-  direction: 1 | -1,
-): string | null {
-  if (!levels || levels.length === 0) return null;
+  direction: 1 | -1
+): string | null => {
+  if (levels.length === 0) {
+    return null;
+  }
 
-  const currentIndex = currentLevel ? levels.indexOf(currentLevel) : -1;
+  const currentIndex =
+    currentLevel === undefined ? -1 : levels.indexOf(currentLevel);
   let nextIndex: number;
 
   if (currentIndex === -1) {
@@ -38,22 +49,22 @@ export function getNextThinkingLevel(
     nextIndex = (currentIndex + direction + levels.length) % levels.length;
   }
 
-  return levels[nextIndex];
-}
+  return levels[nextIndex] ?? null;
+};
 
-export async function cycleFavorites(
+export const cycleFavorites = async (
   direction: 1 | -1,
   pi: ExtensionAPI,
-  ctx: ExtensionContext,
-): Promise<boolean> {
+  ctx: ExtensionContext
+): Promise<boolean> => {
   const config = loadConfig();
-  const blockedList = config.blocked ?? [];
+  const blockedList = config.blocked;
 
   // Filter out any favorites that match the blocklist
   const activeFavorites = config.favorites.filter((fav) => {
     const [provider, ...rest] = fav.split("/");
     const id = rest.join("/");
-    return !isModelBlocked({ provider, id }, blockedList);
+    return !isModelBlocked({ id, provider }, blockedList);
   });
 
   if (activeFavorites.length === 0) {
@@ -61,27 +72,38 @@ export async function cycleFavorites(
       config.favorites.length > 0
         ? "All configured favorite models are currently blocked."
         : "No favorite models configured. Press Alt+M and press 'f' on models to add favorites.",
-      "warning",
+      "warning"
     );
     return false;
   }
 
-  const currentKey = ctx.model ? modelKey(ctx.model) : undefined;
+  const currentKey = ctx.model === undefined ? undefined : modelKey(ctx.model);
   const nextKey = getNextFavoriteKey(activeFavorites, currentKey, direction);
 
-  if (!nextKey) return false;
+  if (nextKey === null) {
+    return false;
+  }
 
   const [provider, ...rest] = nextKey.split("/");
   const modelId = rest.join("/");
 
-  const targetModel = ctx.modelRegistry.find(provider, modelId);
-  if (!targetModel) {
-    ctx.ui.notify(`Model "${nextKey}" not found or provider not configured.`, "error");
+  const targetModel = ctx.modelRegistry
+    .getAll()
+    .find((m) => m.provider === provider && m.id === modelId);
+
+  if (targetModel === undefined) {
+    ctx.ui.notify(
+      `Model "${nextKey}" not found or provider not configured.`,
+      "error"
+    );
     return false;
   }
 
   if (isModelBlocked(targetModel, blockedList)) {
-    ctx.ui.notify(`Cannot switch to "${nextKey}": model is blocked.`, "warning");
+    ctx.ui.notify(
+      `Cannot switch to "${nextKey}": model is blocked.`,
+      "warning"
+    );
     return false;
   }
 
@@ -89,57 +111,62 @@ export async function cycleFavorites(
   if (success) {
     let thinkingSuffix = "";
     const savedThinking = config.modelThinking?.[nextKey];
-    if (savedThinking && typeof (pi as any).setThinkingLevel === "function") {
-      (pi as any).setThinkingLevel(savedThinking);
+    if (savedThinking !== undefined && isThinkingLevel(savedThinking)) {
+      pi.setThinkingLevel(savedThinking);
       thinkingSuffix = ` [thinking: ${savedThinking}]`;
     }
-    ctx.ui.notify(`★ ${targetModel.name || targetModel.id} (${targetModel.provider})${thinkingSuffix}`, "info");
-    return true;
-  } else {
+    const displayName =
+      targetModel.name.length > 0 ? targetModel.name : targetModel.id;
     ctx.ui.notify(
-      `Could not switch to ${targetModel.name || targetModel.id} (provider credentials missing)`,
-      "error",
+      `★ ${displayName} (${targetModel.provider})${thinkingSuffix}`,
+      "info"
     );
-    return false;
+    return true;
   }
-}
+  const failedName =
+    targetModel.name.length > 0 ? targetModel.name : targetModel.id;
+  ctx.ui.notify(
+    `Could not switch to ${failedName} (provider credentials missing)`,
+    "error"
+  );
+  return false;
+};
 
-export async function cycleThinkingLevel(
+export const cycleThinkingLevel = (
   direction: 1 | -1,
   pi: ExtensionAPI,
-  ctx: ExtensionContext,
-): Promise<boolean> {
-  if (!ctx.model) {
+  ctx: ExtensionContext
+): boolean => {
+  if (ctx.model === undefined) {
     ctx.ui.notify("No active model to change thinking level for.", "warning");
     return false;
   }
 
   const levels = getSupportedThinkingLevels(ctx.model);
   if (levels.length <= 1 && levels[0] === "off") {
-    ctx.ui.notify(`${ctx.model.name} does not support thinking / reasoning`, "warning");
+    ctx.ui.notify(
+      `${ctx.model.name} does not support thinking / reasoning`,
+      "warning"
+    );
     return false;
   }
 
-  const currentLevel =
-    typeof (pi as any).getThinkingLevel === "function"
-      ? ((pi as any).getThinkingLevel() as string | undefined)
-      : undefined;
-
+  const currentLevel = pi.getThinkingLevel();
   const nextLevel = getNextThinkingLevel(levels, currentLevel, direction);
-  if (!nextLevel) return false;
+  if (nextLevel === null) {
+    return false;
+  }
 
-  if (typeof (pi as any).setThinkingLevel === "function") {
-    (pi as any).setThinkingLevel(nextLevel);
+  if (isThinkingLevel(nextLevel)) {
+    pi.setThinkingLevel(nextLevel);
   }
 
   const config = loadConfig();
   const key = modelKey(ctx.model);
-  config.modelThinking = { ...(config.modelThinking ?? {}), [key]: nextLevel };
+  config.modelThinking = { ...config.modelThinking, [key]: nextLevel };
   saveConfig(config);
 
   const desc = LEVEL_DESCRIPTIONS[nextLevel] ?? nextLevel;
   ctx.ui.notify(`🧠 Thinking: ${nextLevel} (${desc})`, "info");
   return true;
-}
-
-
+};

@@ -1,46 +1,48 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import path from "node:path";
+
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+
 import type {
   KeyBindingSetting,
   ModalKeyConfig,
+  ModelLike,
   ModelSwitchConfig,
   ResolvedModalKeys,
   ResolvedShortcuts,
   ShortcutConfig,
 } from "./types.ts";
 
-export const modelKey = (m: Model<Api>): string => `${m.provider}/${m.id}`;
+export const modelKey = (m: ModelLike): string => `${m.provider}/${m.id}`;
 
 export const DEFAULT_SHORTCUTS: ResolvedShortcuts = {
-  open: ["alt+m"],
   cycleNext: ["ctrl+alt+p"],
   cyclePrev: ["ctrl+alt+shift+p"],
+  open: ["alt+m"],
   thinkingNext: ["alt+t"],
   thinkingPrev: ["alt+shift+t"],
 };
 
 export const DEFAULT_MODAL_KEYS: ResolvedModalKeys = {
-  up: ["k", "K", "up"],
+  block: ["b", "B"],
+  cancel: ["q", "Q", "escape", "esc"],
+  default: ["d", "D"],
   down: ["j", "J", "down"],
+  favorite: ["f", "F"],
+  filter: ["/"],
   first: ["g", "home"],
+  hide: ["h", "H"],
   last: ["G", "end", "shift+g"],
   select: ["enter"],
-  cancel: ["q", "Q", "escape", "esc"],
   thinking: ["t", "T", "e", "E"],
-  favorite: ["f", "F"],
-  default: ["d", "D"],
-  hide: ["h", "H"],
   toggleHidden: ["v", "V"],
-  filter: ["/"],
-  block: ["b", "B"],
+  up: ["k", "K", "up"],
 };
 
-export function normalizeKeyList(
+export const normalizeKeyList = (
   setting: KeyBindingSetting | undefined,
-  fallback: string[],
-): string[] {
+  fallback: string[]
+): string[] => {
   if (setting === undefined) {
     return [...fallback];
   }
@@ -50,59 +52,79 @@ export function normalizeKeyList(
   const rawList = Array.isArray(setting) ? setting : [setting];
   const result: string[] = [];
   for (const item of rawList) {
-    const trimmed = String(item).trim();
-    if (!trimmed) continue;
+    const trimmed = item.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
     if (!result.includes(trimmed)) {
       result.push(trimmed);
     }
-    if (trimmed.length === 1 && /[a-zA-Z]/.test(trimmed) && trimmed !== "g" && trimmed !== "G") {
-      const alt = trimmed === trimmed.toLowerCase() ? trimmed.toUpperCase() : trimmed.toLowerCase();
+    if (
+      trimmed.length === 1 &&
+      /[a-zA-Z]/u.test(trimmed) &&
+      trimmed !== "g" &&
+      trimmed !== "G"
+    ) {
+      const alt =
+        trimmed === trimmed.toLowerCase()
+          ? trimmed.toUpperCase()
+          : trimmed.toLowerCase();
       if (!result.includes(alt)) {
         result.push(alt);
       }
     }
   }
   return result;
-}
+};
 
-export function resolveShortcuts(custom?: ShortcutConfig): ResolvedShortcuts {
-  return {
-    open: normalizeKeyList(custom?.open, DEFAULT_SHORTCUTS.open),
-    cycleNext: normalizeKeyList(custom?.cycleNext, DEFAULT_SHORTCUTS.cycleNext),
-    cyclePrev: normalizeKeyList(custom?.cyclePrev, DEFAULT_SHORTCUTS.cyclePrev),
-    thinkingNext: normalizeKeyList(custom?.thinkingNext, DEFAULT_SHORTCUTS.thinkingNext),
-    thinkingPrev: normalizeKeyList(custom?.thinkingPrev, DEFAULT_SHORTCUTS.thinkingPrev),
-  };
-}
+export const resolveShortcuts = (
+  custom?: ShortcutConfig
+): ResolvedShortcuts => ({
+  cycleNext: normalizeKeyList(custom?.cycleNext, DEFAULT_SHORTCUTS.cycleNext),
+  cyclePrev: normalizeKeyList(custom?.cyclePrev, DEFAULT_SHORTCUTS.cyclePrev),
+  open: normalizeKeyList(custom?.open, DEFAULT_SHORTCUTS.open),
+  thinkingNext: normalizeKeyList(
+    custom?.thinkingNext,
+    DEFAULT_SHORTCUTS.thinkingNext
+  ),
+  thinkingPrev: normalizeKeyList(
+    custom?.thinkingPrev,
+    DEFAULT_SHORTCUTS.thinkingPrev
+  ),
+});
 
-export function resolveModalKeys(custom?: ModalKeyConfig): ResolvedModalKeys {
-  return {
-    up: normalizeKeyList(custom?.up, DEFAULT_MODAL_KEYS.up),
-    down: normalizeKeyList(custom?.down, DEFAULT_MODAL_KEYS.down),
-    first: normalizeKeyList(custom?.first, DEFAULT_MODAL_KEYS.first),
-    last: normalizeKeyList(custom?.last, DEFAULT_MODAL_KEYS.last),
-    select: normalizeKeyList(custom?.select, DEFAULT_MODAL_KEYS.select),
-    cancel: normalizeKeyList(custom?.cancel, DEFAULT_MODAL_KEYS.cancel),
-    thinking: normalizeKeyList(custom?.thinking, DEFAULT_MODAL_KEYS.thinking),
-    favorite: normalizeKeyList(custom?.favorite, DEFAULT_MODAL_KEYS.favorite),
-    default: normalizeKeyList(custom?.default, DEFAULT_MODAL_KEYS.default),
-    hide: normalizeKeyList(custom?.hide, DEFAULT_MODAL_KEYS.hide),
-    toggleHidden: normalizeKeyList(custom?.toggleHidden, DEFAULT_MODAL_KEYS.toggleHidden),
-    filter: normalizeKeyList(custom?.filter, DEFAULT_MODAL_KEYS.filter),
-    block: normalizeKeyList(custom?.block, DEFAULT_MODAL_KEYS.block),
-  };
-}
+export const resolveModalKeys = (
+  custom?: ModalKeyConfig
+): ResolvedModalKeys => ({
+  block: normalizeKeyList(custom?.block, DEFAULT_MODAL_KEYS.block),
+  cancel: normalizeKeyList(custom?.cancel, DEFAULT_MODAL_KEYS.cancel),
+  default: normalizeKeyList(custom?.default, DEFAULT_MODAL_KEYS.default),
+  down: normalizeKeyList(custom?.down, DEFAULT_MODAL_KEYS.down),
+  favorite: normalizeKeyList(custom?.favorite, DEFAULT_MODAL_KEYS.favorite),
+  filter: normalizeKeyList(custom?.filter, DEFAULT_MODAL_KEYS.filter),
+  first: normalizeKeyList(custom?.first, DEFAULT_MODAL_KEYS.first),
+  hide: normalizeKeyList(custom?.hide, DEFAULT_MODAL_KEYS.hide),
+  last: normalizeKeyList(custom?.last, DEFAULT_MODAL_KEYS.last),
+  select: normalizeKeyList(custom?.select, DEFAULT_MODAL_KEYS.select),
+  thinking: normalizeKeyList(custom?.thinking, DEFAULT_MODAL_KEYS.thinking),
+  toggleHidden: normalizeKeyList(
+    custom?.toggleHidden,
+    DEFAULT_MODAL_KEYS.toggleHidden
+  ),
+  up: normalizeKeyList(custom?.up, DEFAULT_MODAL_KEYS.up),
+});
 
-export function configPath(): string {
-  return join(getAgentDir(), "model-switch.json");
-}
+export const configPath = (): string =>
+  path.join(getAgentDir(), "model-switch.json");
 
-export function matchesBlockPattern(
+export const matchesBlockPattern = (
   pattern: string,
-  model: { provider: string; id: string },
-): boolean {
+  model: ModelLike
+): boolean => {
   const p = pattern.trim();
-  if (!p) return false;
+  if (p.length === 0) {
+    return false;
+  }
 
   const key = `${model.provider}/${model.id}`.toLowerCase();
   const id = model.id.toLowerCase();
@@ -116,10 +138,10 @@ export function matchesBlockPattern(
   // If pattern contains glob wildcards (* or ?)
   if (p.includes("*") || p.includes("?")) {
     const escaped = pLower
-      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-      .replace(/\*/g, ".*")
-      .replace(/\?/g, ".");
-    const regex = new RegExp(`^${escaped}$`, "i");
+      .replaceAll(/[.+^${}()|[\]\\]/gu, "\\$&")
+      .replaceAll("*", ".*")
+      .replaceAll("?", ".");
+    const regex = new RegExp(`^${escaped}$`, "iu");
 
     if (p.includes("/")) {
       return regex.test(key);
@@ -128,128 +150,168 @@ export function matchesBlockPattern(
   }
 
   return pLower === key;
-}
+};
 
-export function isModelBlocked(
-  model: { provider: string; id: string },
-  blocklist?: string[],
-): boolean {
-  if (!blocklist || !Array.isArray(blocklist) || blocklist.length === 0) {
+export const isModelBlocked = (
+  model: ModelLike,
+  blocklist?: string[]
+): boolean => {
+  if (
+    blocklist === undefined ||
+    !Array.isArray(blocklist) ||
+    blocklist.length === 0
+  ) {
     return false;
   }
   return blocklist.some((pattern) => matchesBlockPattern(pattern, model));
-}
+};
 
-export function addBlockedPattern(pattern: string): boolean {
-  const p = pattern.trim();
-  if (!p) return false;
-  const config = loadConfig();
-  const blocked = config.blocked ?? [];
-  if (blocked.includes(p)) return false;
-  blocked.push(p);
-  // Also remove exact or matching model keys from favorites
-  const favorites = config.favorites.filter((fav) => {
-    if (fav === p) return false;
-    const [provider, ...rest] = fav.split("/");
-    return !matchesBlockPattern(p, { provider, id: rest.join("/") });
-  });
-  saveConfig({ ...config, favorites, blocked });
-  return true;
-}
+const isRecord = (val: unknown): val is Record<string, unknown> =>
+  typeof val === "object" && val !== null && !Array.isArray(val);
 
-export function removeBlockedPattern(pattern: string): boolean {
-  const p = pattern.trim();
-  if (!p) return false;
-  const config = loadConfig();
-  const blocked = config.blocked ?? [];
-  const idx = blocked.indexOf(p);
-  if (idx === -1) return false;
-  blocked.splice(idx, 1);
-  saveConfig({ ...config, blocked });
-  return true;
-}
+const toStringArray = (val: unknown): string[] => {
+  if (!Array.isArray(val)) {
+    return [];
+  }
+  const result: string[] = [];
+  for (const item of val) {
+    if (typeof item === "string") {
+      result.push(item);
+    }
+  }
+  return result;
+};
 
-export function loadConfig(): ModelSwitchConfig {
+const toStringRecord = (val: unknown): Record<string, string> => {
+  if (!isRecord(val)) {
+    return {};
+  }
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(val)) {
+    if (typeof v === "string") {
+      result[k] = v;
+    }
+  }
+  return result;
+};
+
+export const loadConfig = (): ModelSwitchConfig => {
   const filePath = configPath();
 
   if (!existsSync(filePath)) {
-    return { favorites: [], hidden: [], blocked: [] };
+    return { blocked: [], favorites: [], hidden: [] };
   }
 
   try {
     const raw = readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<ModelSwitchConfig & { blocklist?: string[]; models?: Record<string, { disabled?: boolean }> }>;
-    const blocked: string[] = Array.isArray(parsed.blocked)
-      ? [...parsed.blocked]
-      : Array.isArray(parsed.blocklist)
-        ? [...parsed.blocklist]
-        : [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      return { blocked: [], favorites: [], hidden: [] };
+    }
 
-    if (typeof parsed.models === "object" && parsed.models !== null) {
+    const blocked = toStringArray(parsed.blocked);
+    if (blocked.length === 0 && Array.isArray(parsed.blocklist)) {
+      blocked.push(...toStringArray(parsed.blocklist));
+    }
+
+    let models: Record<string, { disabled?: boolean }> | undefined;
+    if (isRecord(parsed.models)) {
+      models = {};
       for (const [key, val] of Object.entries(parsed.models)) {
-        if (typeof val === "object" && val !== null && val.disabled === true) {
-          if (!blocked.includes(key)) {
+        if (isRecord(val) && typeof val.disabled === "boolean") {
+          models[key] = { disabled: val.disabled };
+          if (val.disabled && !blocked.includes(key)) {
             blocked.push(key);
           }
         }
       }
     }
+
+    const modalKeys = isRecord(parsed.modalKeys)
+      ? (parsed.modalKeys as ModalKeyConfig)
+      : undefined;
+    const shortcuts = isRecord(parsed.shortcuts)
+      ? (parsed.shortcuts as ShortcutConfig)
+      : undefined;
+
     return {
-      favorites: Array.isArray(parsed.favorites) ? parsed.favorites : [],
-      hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
       blocked,
-      modelThinking:
-        typeof parsed.modelThinking === "object" && parsed.modelThinking !== null
-          ? (parsed.modelThinking as Record<string, string>)
-          : {},
-      shortcuts:
-        typeof parsed.shortcuts === "object" && parsed.shortcuts !== null
-          ? (parsed.shortcuts as ShortcutConfig)
-          : undefined,
-      modalKeys:
-        typeof parsed.modalKeys === "object" && parsed.modalKeys !== null
-          ? (parsed.modalKeys as ModalKeyConfig)
-          : undefined,
+      favorites: toStringArray(parsed.favorites),
+      hidden: toStringArray(parsed.hidden),
+      modalKeys,
+      modelThinking: toStringRecord(parsed.modelThinking),
+      models,
+      shortcuts,
     };
   } catch {
-    return { favorites: [], hidden: [], blocked: [], modelThinking: {} };
+    return { blocked: [], favorites: [], hidden: [], modelThinking: {} };
   }
-}
+};
 
-export function saveConfig(
-  newConfig: Partial<ModelSwitchConfig & { models?: Record<string, { disabled?: boolean }> }> & {
+export const saveConfig = (
+  newConfig: Partial<ModelSwitchConfig> & {
     favorites: string[];
     hidden: string[];
     blocked?: string[];
-  },
-): void {
+  }
+): void => {
   try {
-    let existing: Partial<
-      ModelSwitchConfig & { blocklist?: string[]; models?: Record<string, { disabled?: boolean }> }
-    > = {};
+    const existing = loadConfig();
     const filePath = configPath();
-    if (existsSync(filePath)) {
-      try {
-        existing = JSON.parse(readFileSync(filePath, "utf-8")) as Partial<ModelSwitchConfig & { blocklist?: string[] }>;
-      } catch {
-        existing = {};
-      }
-    }
-    const merged: ModelSwitchConfig & { models?: Record<string, { disabled?: boolean }> } = {
+    const merged: ModelSwitchConfig = {
+      blocked: newConfig.blocked ?? existing.blocked,
       favorites: newConfig.favorites,
       hidden: newConfig.hidden,
-      blocked: newConfig.blocked ?? existing.blocked ?? existing.blocklist ?? [],
+      modalKeys: newConfig.modalKeys ?? existing.modalKeys,
       modelThinking: newConfig.modelThinking ?? existing.modelThinking ?? {},
       shortcuts: newConfig.shortcuts ?? existing.shortcuts,
-      modalKeys: newConfig.modalKeys ?? existing.modalKeys,
     };
-    if ((newConfig as any).models ?? existing.models) {
-      merged.models = (newConfig as any).models ?? existing.models;
+    if (newConfig.models !== undefined || existing.models !== undefined) {
+      merged.models = newConfig.models ?? existing.models;
     }
     const content = JSON.stringify(merged, null, 2);
-    mkdirSync(dirname(filePath), { recursive: true });
+    mkdirSync(path.dirname(filePath), { recursive: true });
     writeFileSync(filePath, content, "utf-8");
   } catch {
     // Best-effort: failures must not crash caller
   }
-}
+};
+
+export const addBlockedPattern = (pattern: string): boolean => {
+  const p = pattern.trim();
+  if (p.length === 0) {
+    return false;
+  }
+  const config = loadConfig();
+  const blocked = config.blocked ?? [];
+  if (blocked.includes(p)) {
+    return false;
+  }
+  blocked.push(p);
+  // Also remove exact or matching model keys from favorites
+  const favorites = config.favorites.filter((fav) => {
+    if (fav === p) {
+      return false;
+    }
+    const [provider, ...rest] = fav.split("/");
+    return !matchesBlockPattern(p, { id: rest.join("/"), provider });
+  });
+  saveConfig({ ...config, blocked, favorites });
+  return true;
+};
+
+export const removeBlockedPattern = (pattern: string): boolean => {
+  const p = pattern.trim();
+  if (p.length === 0) {
+    return false;
+  }
+  const config = loadConfig();
+  const blocked = config.blocked ?? [];
+  const idx = blocked.indexOf(p);
+  if (idx === -1) {
+    return false;
+  }
+  blocked.splice(idx, 1);
+  saveConfig({ ...config, blocked });
+  return true;
+};
