@@ -1,6 +1,39 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export type KeyBindingSetting = string | string[] | null | false;
+
+export type ThinkingLevel = Parameters<ExtensionAPI["setThinkingLevel"]>[0];
+
+export const LEVEL_DESCRIPTIONS: Record<string, string> = {
+  high: "Deep reasoning (~16k tokens)",
+  low: "Light reasoning (~2k tokens)",
+  max: "Maximum possible reasoning",
+  medium: "Moderate reasoning (~8k tokens)",
+  minimal: "Very brief reasoning (~1k tokens)",
+  off: "No reasoning",
+  xhigh: "Maximum reasoning (~32k tokens)",
+};
+
+const VALID_THINKING_LEVELS: ReadonlySet<ThinkingLevel> =
+  new Set<ThinkingLevel>([
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ]);
+
+export const isThinkingLevel = (level: string): level is ThinkingLevel =>
+  (VALID_THINKING_LEVELS as ReadonlySet<string>).has(level);
+
+export interface ModelLike {
+  provider: string;
+  id: string;
+  name?: string;
+}
 
 export interface ShortcutConfig {
   open?: KeyBindingSetting;
@@ -54,6 +87,8 @@ export interface ModelSwitchConfig {
   favorites: string[];
   hidden: string[];
   blocked: string[];
+  blocklist?: string[];
+  models?: Record<string, { disabled?: boolean }>;
   modelThinking?: Record<string, string>;
   shortcuts?: ShortcutConfig;
   modalKeys?: ModalKeyConfig;
@@ -97,4 +132,3 @@ export type ThinkingAction =
   | { type: "select" }
   | { type: "cancel" }
   | { type: "ignore" };
-
