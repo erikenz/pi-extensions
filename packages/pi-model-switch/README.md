@@ -65,8 +65,8 @@ pi install @erikenz/pi-model-switch
 Clone this repository into your extensions directory or symlink it:
 
 ```bash
-git clone https://github.com/erikenz/pi-model-switch.git ~/Projects/pi-model-switch
-ln -s ~/Projects/pi-model-switch/extensions/index.ts ~/.config/pi/agent/extensions/pi-model-switch.ts
+git clone https://github.com/erikenz/pi-extensions.git ~/Projects/pi-extensions
+ln -s ~/Projects/pi-extensions/packages/pi-model-switch/extensions/index.ts ~/.config/pi/agent/extensions/pi-model-switch.ts
 ```
 
 ---

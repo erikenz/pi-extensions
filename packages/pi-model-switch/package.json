@@ -14,7 +14,7 @@
   "author": "erikenz",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/erikenz/pi-model-switch.git",
+    "url": "git+https://github.com/erikenz/pi-extensions.git",
     "directory": "packages/pi-model-switch"
   },
   "files": [

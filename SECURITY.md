@@ -11,6 +11,6 @@
 
 If you discover a security vulnerability within this repository, please **do not** open a public issue.
 
-Instead, please report security vulnerabilities privately via [GitHub Private Vulnerability Reporting](https://github.com/erikenz/pi-model-switch/security/advisories/new) or directly contact the maintainer.
+Instead, please report security vulnerabilities privately via [GitHub Private Vulnerability Reporting](https://github.com/erikenz/pi-extensions/security/advisories/new) or directly contact the maintainer.
 
 All reports will be acknowledged promptly and investigated.
