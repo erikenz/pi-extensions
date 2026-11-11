@@ -7,8 +7,8 @@ Thank you for your interest in contributing! This project is an open-source exte
 1. **Fork and clone** this repository:
 
    ```bash
-   git clone https://github.com/<your-username>/pi-model-switch.git
-   cd pi-model-switch
+   git clone https://github.com/<your-username>/pi-extensions.git
+   cd pi-extensions
    ```
 
 2. **Install dependencies**:
@@ -19,7 +19,7 @@ Thank you for your interest in contributing! This project is an open-source exte
 
 3. **Link for local testing in Pi**:
    ```bash
-   ln -s "$(pwd)/extensions/index.ts" ~/.config/pi/agent/extensions/pi-model-switch.ts
+   ln -s "$(pwd)/packages/pi-model-switch/extensions/index.ts" ~/.config/pi/agent/extensions/pi-model-switch.ts
    ```
 
 ## Workflow & Code Standards

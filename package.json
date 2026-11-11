@@ -1,30 +1,13 @@
 {
-  "name": "@erikenz/pi-model-switch",
-  "version": "0.3.1",
-  "description": "Fast model picker and favorite model cycling shortcuts for the Pi coding agent.",
-  "keywords": [
-    "favorites",
-    "model-picker",
-    "model-switch",
-    "pi-extension",
-    "pi-package",
-    "shortcuts"
-  ],
-  "license": "MIT",
-  "author": "erikenz",
+  "name": "pi-extensions-monorepo",
+  "private": true,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/erikenz/pi-model-switch.git"
+    "url": "git+https://github.com/erikenz/pi-extensions.git"
   },
-  "files": [
-    "extensions",
-    "src",
-    "README.md",
-    "LICENSE"
-  ],
   "type": "module",
   "scripts": {
-    "test": "node --test",
+    "test": "pnpm -r test",
     "typecheck": "tsc --noEmit",
     "check": "ultracite check",
     "fix": "ultracite fix"
@@ -40,17 +23,7 @@
     "typescript": "^7.0.2",
     "ultracite": "8.1.1"
   },
-  "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
-  },
   "engines": {
     "node": ">=18"
-  },
-  "pi": {
-    "extensions": [
-      "./extensions/index.ts"
-    ]
   }
 }
