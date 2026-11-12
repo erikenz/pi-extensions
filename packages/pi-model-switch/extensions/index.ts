@@ -1,3 +1,4 @@
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -13,7 +14,13 @@ import {
   resolveShortcuts,
 } from "../src/config.ts";
 import { cycleFavorites, cycleThinkingLevel } from "../src/cycling.ts";
+import {
+  getCachedDisabledModels,
+  isOpenCodeDisabled,
+  syncOpenCodeDisabledModels,
+} from "../src/opencode.ts";
 import { openModelPickerModal } from "../src/picker.ts";
+import type { ModelLike } from "../src/types.ts";
 
 const isKeyId = (value: string): value is KeyId => value.trim().length > 0;
 
@@ -127,10 +134,28 @@ const handleCommandDispatch = async (
     handleUnblockCommand(raw.slice(8).trim(), ctx);
   } else if (lower === "blocked" || lower === "list-blocked") {
     handleListBlockedCommand(ctx);
+  } else if (
+    lower === "sync" ||
+    lower === "sync-models" ||
+    lower === "refresh-models"
+  ) {
+    ctx.ui.notify("Syncing OpenCode console configuration...", "info");
+    const res = await syncOpenCodeDisabledModels(getAgentDir(), true);
+    ctx.ui.notify(
+      `OpenCode sync complete: ${res.disabled.size} disabled models filtered.`,
+      "info"
+    );
   } else {
     await openModelPickerModal(pi, ctx);
   }
 };
+
+const isModelUnavailable = (
+  model: ModelLike,
+  blockedList: string[],
+  disabledSet: Set<string>
+): boolean =>
+  isModelBlocked(model, blockedList) || isOpenCodeDisabled(model, disabledSet);
 
 const modelSwitchExtension = (pi: ExtensionAPI): void => {
   // Command: /model-switch [cycle [next|prev] | thinking [next|prev] | block <id> | unblock <id> | blocked]
@@ -213,7 +238,7 @@ const modelSwitchExtension = (pi: ExtensionAPI): void => {
     );
   }
 
-  // Global blocklist enforcement across Pi
+  // Global blocklist & disabled models enforcement across Pi
   let isEnforcing = false;
 
   pi.on("model_select", async (event, ctx) => {
@@ -222,28 +247,33 @@ const modelSwitchExtension = (pi: ExtensionAPI): void => {
     }
     const currentConfig = loadConfig();
     const blockedList = currentConfig.blocked;
-    if (blockedList.length === 0) {
-      return;
-    }
+    const disabledSet =
+      currentConfig.syncOpenCode === false
+        ? new Set<string>()
+        : getCachedDisabledModels(getAgentDir());
 
-    if (isModelBlocked(event.model, blockedList)) {
+    if (isModelUnavailable(event.model, blockedList, disabledSet)) {
       isEnforcing = true;
       try {
         const modelName =
           event.model.name.length > 0 ? event.model.name : event.model.id;
+        const reason = isModelBlocked(event.model, blockedList)
+          ? "disabled by blocklist"
+          : "disabled in OpenCode console";
         ctx.ui.notify(
-          `Model ${modelName} (${event.model.provider}) is disabled by blocklist.`,
+          `Model ${modelName} (${event.model.provider}) is ${reason}.`,
           "error"
         );
-        if (
-          event.previousModel !== undefined &&
-          !isModelBlocked(event.previousModel, blockedList)
-        ) {
-          await pi.setModel(event.previousModel);
+        const prev = event.previousModel;
+        const canUsePrev =
+          prev !== undefined &&
+          !isModelUnavailable(prev, blockedList, disabledSet);
+        if (canUsePrev) {
+          await pi.setModel(prev);
         } else {
           const available = ctx.modelRegistry.getAvailable();
           const fallback = available.find(
-            (m) => !isModelBlocked(m, blockedList)
+            (m) => !isModelUnavailable(m, blockedList, disabledSet)
           );
           if (fallback !== undefined) {
             await pi.setModel(fallback);
@@ -261,21 +291,31 @@ const modelSwitchExtension = (pi: ExtensionAPI): void => {
   ): Promise<void> => {
     const currentConfig = loadConfig();
     const blockedList = currentConfig.blocked;
-    if (blockedList.length === 0 || ctx.model === undefined) {
+    const disabledSet =
+      currentConfig.syncOpenCode === false
+        ? new Set<string>()
+        : getCachedDisabledModels(getAgentDir());
+
+    if (ctx.model === undefined) {
       return;
     }
 
-    if (isModelBlocked(ctx.model, blockedList)) {
+    if (isModelUnavailable(ctx.model, blockedList, disabledSet)) {
       const available = ctx.modelRegistry.getAvailable();
-      const fallback = available.find((m) => !isModelBlocked(m, blockedList));
+      const fallback = available.find(
+        (m) => !isModelUnavailable(m, blockedList, disabledSet)
+      );
       if (fallback !== undefined) {
         await pi.setModel(fallback);
         const currentName =
           ctx.model.name.length > 0 ? ctx.model.name : ctx.model.id;
         const fallbackName =
           fallback.name.length > 0 ? fallback.name : fallback.id;
+        const statusDetail = isModelBlocked(ctx.model, blockedList)
+          ? "blocklisted"
+          : "disabled in OpenCode";
         ctx.ui.notify(
-          `${reason} ${currentName} is blocked by blocklist. Switched to ${fallbackName}.`,
+          `${reason} ${currentName} is unavailable (${statusDetail}). Switched to ${fallbackName}.`,
           "warning"
         );
       }
@@ -283,6 +323,12 @@ const modelSwitchExtension = (pi: ExtensionAPI): void => {
   };
 
   pi.on("session_start", async (_event, ctx) => {
+    const currentConfig = loadConfig();
+    if (currentConfig.syncOpenCode === false) {
+      // Sync disabled by user setting
+    } else {
+      void syncOpenCodeDisabledModels(getAgentDir());
+    }
     await checkAndFallbackModel(ctx, "Startup model");
   });
 

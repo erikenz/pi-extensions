@@ -16,16 +16,44 @@ import {
   resolveModalKeys,
   saveConfig,
 } from "./config.ts";
+import {
+  getCachedDisabledModels,
+  isOpenCodeDisabled,
+  syncOpenCodeDisabledModels,
+} from "./opencode.ts";
+import {
+  fetchQuota,
+  formatModelQuotaBadge,
+  formatProviderQuotaBadge,
+  formatQuotaGroupBadge,
+  getAntigravitySubgroup,
+  getCachedQuota,
+} from "./quota.ts";
 import { isThinkingLevel, LEVEL_DESCRIPTIONS } from "./types.ts";
 import type {
+  FilterAction,
   PickerAction,
+  QuotaBadgeResult,
+  QuotaGroup,
+  QuotaSnapshot,
   ResolvedModalKeys,
   Row,
   ThinkingAction,
   WindowSliceResult,
 } from "./types.ts";
 
-export const VISIBLE_ROWS = 10;
+type UiTheme = Parameters<Parameters<ExtensionContext["ui"]["custom"]>[0]>[1];
+
+export const VISIBLE_ROWS = 20;
+
+export const getVisibleLimit = (): number => {
+  const terminalRows = process.stdout.rows;
+  if (typeof terminalRows === "number" && terminalRows > 0) {
+    // Reserve lines for header (1), favorites (~4), divider (1), navigation hints (2), padding (2)
+    return Math.max(15, Math.min(35, terminalRows - 10));
+  }
+  return VISIBLE_ROWS;
+};
 
 const isKeyId = (value: string): value is KeyId => value.trim().length > 0;
 
@@ -38,14 +66,98 @@ export const sortModels = (models: Model<Api>[]): Model<Api>[] =>
     return a.name.localeCompare(b.name);
   });
 
+const SUBGROUP_ORDER = [
+  "Gemini Models",
+  "Claude & GPT Models",
+  "Gemini 4 Argon",
+];
+
+const compareSubgroups = (a: string, b: string): number => {
+  const idxA = SUBGROUP_ORDER.indexOf(a);
+  const idxB = SUBGROUP_ORDER.indexOf(b);
+  if (idxA !== -1 && idxB !== -1) {
+    return idxA - idxB;
+  }
+  if (idxA === -1 && idxB !== -1) {
+    return 1;
+  }
+  if (idxA !== -1 && idxB === -1) {
+    return -1;
+  }
+  return a.localeCompare(b);
+};
+
+export const buildAntigravityRows = (
+  provider: string,
+  models: Model<Api>[],
+  quotaSnapshot?: QuotaSnapshot
+): Row[] => {
+  const rows: Row[] = [
+    {
+      kind: "header",
+      label: `── ${provider} `,
+      provider,
+    },
+  ];
+
+  const subgroupMap = new Map<
+    string,
+    { group?: QuotaGroup; models: Model<Api>[] }
+  >();
+  for (const m of models) {
+    const sub = getAntigravitySubgroup(m, quotaSnapshot);
+    const entry = subgroupMap.get(sub.name);
+    if (entry === undefined) {
+      subgroupMap.set(sub.name, {
+        group: sub.group,
+        models: [m],
+      });
+    } else {
+      entry.models.push(m);
+      if (entry.group === undefined && sub.group !== undefined) {
+        entry.group = sub.group;
+      }
+    }
+  }
+
+  const sortedSubgroups = [...subgroupMap.keys()].toSorted(compareSubgroups);
+  for (const sgName of sortedSubgroups) {
+    const entry = subgroupMap.get(sgName);
+    if (entry === undefined) {
+      continue;
+    }
+    const quotaBadge =
+      entry.group === undefined
+        ? undefined
+        : formatQuotaGroupBadge(entry.group);
+    rows.push({
+      kind: "header",
+      label: `  ── ${sgName} `,
+      provider,
+      quotaBadge,
+      subgroup: sgName,
+    });
+    for (const m of entry.models) {
+      rows.push({ kind: "model", model: m });
+    }
+  }
+
+  return rows;
+};
+
 export const buildRows = (
   models: Model<Api>[],
   favSet: Set<string>,
   hiddenSet: Set<string>,
   showHidden: boolean,
-  blockedList: string[] = []
+  blockedList: string[] = [],
+  disabledSet: Set<string> = new Set<string>(),
+  quotaSnapshot?: QuotaSnapshot
 ): Row[] => {
-  const visibleModels = models.filter((m) => !isModelBlocked(m, blockedList));
+  const visibleModels = models.filter(
+    (m) =>
+      !isModelBlocked(m, blockedList) && !isOpenCodeDisabled(m, disabledSet)
+  );
   const isFav = (m: Model<Api>): boolean => favSet.has(modelKey(m));
   const isHid = (m: Model<Api>): boolean => hiddenSet.has(modelKey(m));
   const rows: Row[] = [];
@@ -59,8 +171,32 @@ export const buildRows = (
     rows.push({ kind: "divider" });
   }
 
-  for (const candidate of visibleModels.filter((m) => !isFav(m) && !isHid(m))) {
-    rows.push({ kind: "model", model: candidate });
+  const providerModels = sortModels(visibleModels.filter((m) => !isHid(m)));
+  const byProvider = new Map<string, Model<Api>[]>();
+  for (const candidate of providerModels) {
+    const list = byProvider.get(candidate.provider);
+    if (list === undefined) {
+      byProvider.set(candidate.provider, [candidate]);
+    } else {
+      list.push(candidate);
+    }
+  }
+
+  for (const [provider, pModels] of byProvider) {
+    if (provider === "antigravity-acp" || provider.includes("antigravity")) {
+      rows.push(...buildAntigravityRows(provider, pModels, quotaSnapshot));
+    } else {
+      const quotaBadge = formatProviderQuotaBadge(provider, quotaSnapshot);
+      rows.push({
+        kind: "header",
+        label: `── ${provider} `,
+        provider,
+        quotaBadge,
+      });
+      for (const candidate of pModels) {
+        rows.push({ kind: "model", model: candidate });
+      }
+    }
   }
 
   const hidden = visibleModels.filter(isHid);
@@ -110,6 +246,51 @@ export const windowSlice = (
   return { end, moreAbove: scroll > 0, moreBelow, start };
 };
 
+export const countModels = (
+  rows: Row[],
+  winStart: number,
+  winEnd: number
+): number => {
+  let count = 0;
+  for (let i = winStart; i < winEnd; i += 1) {
+    if (rows[i].kind === "model") {
+      count += 1;
+    }
+  }
+  return count;
+};
+
+export const getModelIndexInWindow = (
+  rows: Row[],
+  winStart: number,
+  winEnd: number,
+  cursor: number
+): number => {
+  let modelIndex = 0;
+  for (let i = winStart; i < winEnd && i < cursor; i += 1) {
+    if (rows[i].kind === "model") {
+      modelIndex += 1;
+    }
+  }
+  return modelIndex;
+};
+
+export const adjustScroll = (
+  currentScroll: number,
+  modelIndex: number,
+  totalModels: number,
+  visibleLimit: number = VISIBLE_ROWS
+): number => {
+  const maxScroll = Math.max(0, totalModels - visibleLimit);
+  let scroll = Math.max(0, Math.min(currentScroll, maxScroll));
+  if (modelIndex < scroll) {
+    scroll = modelIndex;
+  } else if (modelIndex >= scroll + visibleLimit) {
+    scroll = modelIndex - visibleLimit + 1;
+  }
+  return Math.max(0, Math.min(scroll, maxScroll));
+};
+
 export const clampScroll = (
   rows: Row[],
   winStart: number,
@@ -117,12 +298,7 @@ export const clampScroll = (
   scroll: number,
   visibleLimit: number = VISIBLE_ROWS
 ): number => {
-  let total = 0;
-  for (let i = winStart; i < winEnd; i += 1) {
-    if (rows[i].kind === "model") {
-      total += 1;
-    }
-  }
+  const total = countModels(rows, winStart, winEnd);
   return Math.max(0, Math.min(scroll, Math.max(0, total - visibleLimit)));
 };
 
@@ -236,6 +412,9 @@ const resolveNavAction = (
   if (matchesAnyKey(data, modalKeys.cancel)) {
     return { type: "cancel" };
   }
+  if (data === "r" || data === "R") {
+    return { type: "refresh_quota" };
+  }
   return { type: "ignore" };
 };
 
@@ -293,6 +472,206 @@ const formatCancelHint = (keys: string[]): string => {
   return first ?? "esc";
 };
 
+export const formatFooterHelp = (
+  modalKeys: ResolvedModalKeys,
+  width: number
+): string => {
+  const nav = formatNavHint(modalKeys);
+  const selKey = formatFirstKey(modalKeys.select, "enter");
+  const thinkKey = formatFirstKey(modalKeys.thinking, "t");
+  const defKey = formatFirstKey(modalKeys.default, "d");
+  const favKey = formatFirstKey(modalKeys.favorite, "f");
+  const hideKey = formatFirstKey(modalKeys.hide, "h");
+  const blockKey = formatFirstKey(modalKeys.block, "b");
+  const hidKey = formatFirstKey(modalKeys.toggleHidden, "v");
+  const filtKey = formatFirstKey(modalKeys.filter, "/");
+  const cancel = formatCancelHint(modalKeys.cancel);
+
+  if (width >= 120) {
+    return `${nav} nav • ${selKey} select • ${thinkKey} thinking • ${defKey} default • ${favKey} fav • ${hideKey} hide • ${blockKey} block • ${hidKey} hidden • ${filtKey} filter • r refresh • ${cancel} cancel`;
+  }
+  if (width >= 90) {
+    return `${nav} • ${selKey} sel • ${thinkKey} think • ${defKey} def • ${favKey} fav • ${hideKey} hide • ${blockKey} blk • ${hidKey} hid • ${filtKey} filt • r sync • ${cancel} back`;
+  }
+  return `${nav} • ${selKey} • ${thinkKey} think • ${favKey} fav • ${defKey} def • ${hideKey} hide • ${hidKey} hid • ${filtKey} filt • r • ${cancel}`;
+};
+
+export interface FormatModelRowParams {
+  m: Model<Api>;
+  isAboveDivider: boolean;
+  isFav: boolean;
+  isHidden: boolean;
+  isCurrent: boolean;
+  isDef: boolean;
+  thinkingLevel?: string;
+  quotaBadge: string;
+}
+
+export const formatModelRowText = (params: FormatModelRowParams): string => {
+  const {
+    isAboveDivider,
+    isCurrent,
+    isDef,
+    isFav,
+    isHidden,
+    m,
+    quotaBadge,
+    thinkingLevel,
+  } = params;
+  const showProvider = isAboveDivider || isHidden;
+  const providerPart = showProvider ? ` (${m.provider})` : "";
+  let star = "";
+  if (isFav) {
+    star = "★ ";
+  } else if (!isAboveDivider) {
+    star = "  ";
+  }
+  let thinkingBadge = "";
+  if (thinkingLevel !== undefined && thinkingLevel.length > 0) {
+    thinkingBadge = ` [thinking: ${thinkingLevel}]`;
+  } else if (m.reasoning) {
+    thinkingBadge = " [reasoning]";
+  }
+  const tags =
+    (isCurrent ? " ●" : "") + (isDef ? " [default]" : "") + thinkingBadge;
+  return `${star}${m.name}${providerPart}${quotaBadge}${tags}`;
+};
+
+export interface HeaderRenderOptions {
+  label: string;
+  provider?: string;
+  subgroup?: string;
+  quotaBadge?: QuotaBadgeResult;
+}
+
+export const formatHeaderLine = (
+  label: string,
+  provider: string | undefined,
+  width: number,
+  badgeText?: string,
+  subgroup?: string,
+  isSticky = false
+): string => {
+  if (provider === undefined && subgroup === undefined) {
+    return label;
+  }
+  const badgePart =
+    badgeText === undefined || badgeText.length === 0 ? " " : ` ${badgeText} `;
+  let prefix = `── ${provider}${badgePart}`;
+  if (subgroup !== undefined) {
+    prefix = isSticky
+      ? `── ${provider} › ${subgroup}${badgePart}`
+      : `  ── ${subgroup}${badgePart}`;
+  }
+  const fill = "─".repeat(Math.max(0, width - prefix.length));
+  return `${prefix}${fill}`;
+};
+
+const resolveHeaderBadge = (
+  header: HeaderRenderOptions,
+  quotaSnapshot?: QuotaSnapshot
+): QuotaBadgeResult | undefined => {
+  if (header.quotaBadge !== undefined) {
+    return header.quotaBadge;
+  }
+  if (header.subgroup !== undefined) {
+    return undefined;
+  }
+  if (header.provider !== undefined) {
+    return formatProviderQuotaBadge(header.provider, quotaSnapshot);
+  }
+  return undefined;
+};
+
+export const renderHeaderRow = (
+  theme: UiTheme,
+  headerOrLabel: string | HeaderRenderOptions,
+  providerOrWidth?: string | number,
+  widthOrQuota?: number | QuotaSnapshot,
+  quotaSnapshotOrSticky?: QuotaSnapshot | boolean,
+  isStickyParam = false
+): string => {
+  let header: HeaderRenderOptions;
+  let width = 80;
+  let quotaSnapshot: QuotaSnapshot | undefined;
+  let isSticky = isStickyParam;
+
+  if (typeof headerOrLabel === "object") {
+    header = headerOrLabel;
+    if (typeof providerOrWidth === "number") {
+      width = providerOrWidth;
+    }
+    if (typeof widthOrQuota === "object") {
+      quotaSnapshot = widthOrQuota;
+    }
+    if (typeof quotaSnapshotOrSticky === "boolean") {
+      isSticky = quotaSnapshotOrSticky;
+    }
+  } else {
+    header = {
+      label: headerOrLabel,
+      provider:
+        typeof providerOrWidth === "string" ? providerOrWidth : undefined,
+    };
+    if (typeof widthOrQuota === "number") {
+      width = widthOrQuota;
+    }
+    if (typeof quotaSnapshotOrSticky === "object") {
+      quotaSnapshot = quotaSnapshotOrSticky;
+    }
+  }
+
+  const { provider, subgroup } = header;
+  const badge = resolveHeaderBadge(header, quotaSnapshot);
+
+  if (provider === undefined && subgroup === undefined) {
+    return theme.fg("dim", header.label);
+  }
+
+  let prefix = `── ${provider} `;
+  if (subgroup !== undefined) {
+    prefix = isSticky ? `── ${provider} › ${subgroup} ` : `  ── ${subgroup} `;
+  }
+
+  if (badge === undefined) {
+    const fill = "─".repeat(Math.max(0, width - prefix.length));
+    return theme.fg("dim", `${prefix}${fill}`);
+  }
+
+  const fill = "─".repeat(
+    Math.max(0, width - prefix.length - badge.text.length - 1)
+  );
+  return (
+    theme.fg("dim", prefix) +
+    theme.fg(badge.severity, badge.text) +
+    theme.fg("dim", ` ${fill}`)
+  );
+};
+
+export const findStickyHeader = (
+  rows: Row[],
+  start: number,
+  winStart: number
+): (Row & { kind: "header" }) | undefined => {
+  if (start <= winStart || rows[start]?.kind !== "model") {
+    return undefined;
+  }
+  for (let i = start - 1; i >= winStart; i -= 1) {
+    const candidate = rows[i];
+    if (candidate.kind === "header") {
+      return candidate;
+    }
+  }
+  return undefined;
+};
+
+export const isFilterAction = (act: PickerAction): act is FilterAction =>
+  act.type === "filter_cancel" ||
+  act.type === "filter_apply" ||
+  act.type === "filter_backspace" ||
+  act.type === "filter_char" ||
+  act.type === "start_filter";
+
 export const openModelPickerModal = async (
   pi: ExtensionAPI,
   ctx: ExtensionContext
@@ -325,6 +704,21 @@ export const openModelPickerModal = async (
     let thinkingModel: Model<Api> | undefined;
     let thinkingLevels: string[] = [];
     let thinkingCursor = 0;
+    let version = 0;
+    let cached:
+      | {
+          version: number;
+          width: number;
+          favScroll: number;
+          modelScroll: number;
+          lines: string[];
+        }
+      | undefined;
+    let quotaSnapshot: QuotaSnapshot | undefined = getCachedQuota();
+    const syncOpenCodeEnabled = config.syncOpenCode ?? true;
+    let disabledSet = syncOpenCodeEnabled
+      ? getCachedDisabledModels(agentDir)
+      : new Set<string>();
 
     const matches = (m: Model<Api>): boolean => {
       if (filter.length === 0) {
@@ -344,33 +738,104 @@ export const openModelPickerModal = async (
         favSet,
         hiddenSet,
         showHidden,
-        blockedList
+        blockedList,
+        disabledSet,
+        quotaSnapshot
       );
     let rows = computeRows();
     let cursor = firstSelectable(rows);
     let favScroll = 0;
     let modelScroll = 0;
-    let version = 0;
-    let cached:
-      | {
-          version: number;
-          width: number;
-          favScroll: number;
-          modelScroll: number;
-          lines: string[];
-        }
-      | undefined;
 
     const focusedModel = (): Model<Api> | undefined => {
       const r = rows[cursor];
       return r?.kind === "model" ? r.model : undefined;
     };
 
+    const updateScroll = (): void => {
+      const limit = getVisibleLimit();
+      const dividerIdx = rows.findIndex((r) => r.kind === "divider");
+      if (dividerIdx === -1) {
+        const total = countModels(rows, 0, rows.length);
+        const idx = getModelIndexInWindow(rows, 0, rows.length, cursor);
+        modelScroll = adjustScroll(modelScroll, idx, total, limit);
+      } else if (cursor < dividerIdx) {
+        const total = countModels(rows, 0, dividerIdx);
+        const idx = getModelIndexInWindow(rows, 0, dividerIdx, cursor);
+        favScroll = adjustScroll(favScroll, idx, total, limit);
+      } else {
+        const total = countModels(rows, dividerIdx + 1, rows.length);
+        const idx = getModelIndexInWindow(
+          rows,
+          dividerIdx + 1,
+          rows.length,
+          cursor
+        );
+        modelScroll = adjustScroll(modelScroll, idx, total, limit);
+      }
+    };
+
     const rebuild = (): void => {
+      const target = focusedModel();
+      const dividerIdx = rows.findIndex((r) => r.kind === "divider");
+      const wasInFavorites = dividerIdx !== -1 && cursor < dividerIdx;
+
       rows = computeRows();
-      cursor = nearestSelectable(rows, cursor);
+      const newDividerIdx = rows.findIndex((r) => r.kind === "divider");
+
+      if (target === undefined) {
+        cursor = nearestSelectable(rows, cursor);
+      } else {
+        const targetKey = modelKey(target);
+        if (wasInFavorites) {
+          const favEnd = newDividerIdx === -1 ? 0 : newDividerIdx;
+          const favIdx = rows.findIndex(
+            (r, idx) =>
+              idx < favEnd &&
+              r.kind === "model" &&
+              modelKey(r.model) === targetKey
+          );
+          cursor = favIdx === -1 ? nearestSelectable(rows, cursor) : favIdx;
+        } else {
+          const searchStart = newDividerIdx === -1 ? 0 : newDividerIdx + 1;
+          const providerIdx = rows.findIndex(
+            (r, idx) =>
+              idx >= searchStart &&
+              r.kind === "model" &&
+              modelKey(r.model) === targetKey
+          );
+          cursor =
+            providerIdx === -1 ? nearestSelectable(rows, cursor) : providerIdx;
+        }
+      }
+
+      updateScroll();
       cached = undefined;
     };
+
+    void fetchQuota(pi, agentDir).then((fresh) => {
+      if (fresh !== undefined) {
+        quotaSnapshot = fresh;
+        rebuild();
+        version += 1;
+        cached = undefined;
+        tui.requestRender();
+      }
+      return null;
+    });
+
+    if (syncOpenCodeEnabled) {
+      void syncOpenCodeDisabledModels(agentDir).then((res) => {
+        if (res.changed) {
+          disabledSet = res.disabled;
+          rebuild();
+          version += 1;
+          cached = undefined;
+          tui.requestRender();
+        }
+        return null;
+      });
+    }
 
     const toggleFavorite = (): void => {
       const m = focusedModel();
@@ -470,22 +935,6 @@ export const openModelPickerModal = async (
         rebuild();
         version += 1;
         tui.requestRender();
-      }
-    };
-
-    const updateScroll = (): void => {
-      const dividerIdx = rows.findIndex((r) => r.kind === "divider");
-      if (dividerIdx === -1) {
-        modelScroll = clampScroll(rows, 0, rows.length, cursor);
-      } else if (cursor < dividerIdx) {
-        favScroll = clampScroll(rows, 0, dividerIdx, cursor);
-      } else {
-        modelScroll = clampScroll(
-          rows,
-          dividerIdx + 1,
-          rows.length,
-          cursor - (dividerIdx + 1)
-        );
       }
     };
 
@@ -602,16 +1051,29 @@ export const openModelPickerModal = async (
       const renderWindow = (
         winStart: number,
         winEnd: number,
-        scroll: number
+        scroll: number,
+        limit: number = getVisibleLimit()
       ): void => {
-        const slice = windowSlice(rows, winStart, winEnd, scroll);
-        if (slice.moreAbove) {
-          lines.push(theme.fg("dim", "  ▲"));
+        const slice = windowSlice(rows, winStart, winEnd, scroll, limit);
+
+        const sticky = findStickyHeader(rows, slice.start, winStart);
+        if (sticky !== undefined) {
+          lines.push(
+            renderHeaderRow(theme, sticky, width, quotaSnapshot, true)
+          );
         }
+
+        if (slice.moreAbove) {
+          const label = scroll === 1 ? "1 more above" : `${scroll} more above`;
+          lines.push(theme.fg("dim", `  ▲ (${label})`));
+        }
+
         for (let i = slice.start; i < slice.end; i += 1) {
           const row = rows[i];
           if (row.kind === "header") {
-            lines.push(theme.fg("dim", row.label));
+            lines.push(
+              renderHeaderRow(theme, row, width, quotaSnapshot, false)
+            );
           } else if (row.kind === "model") {
             hasSelectable = true;
             const m = row.model;
@@ -619,26 +1081,39 @@ export const openModelPickerModal = async (
             const isCurrent = key === currentKey;
             const isFav = favSet.has(key);
             const isDef = isDefault(m);
-            const star = isFav ? "★ " : "  ";
+            const isHidden = hiddenSet.has(key);
+            const isAboveDivider = dividerIdx !== -1 && i < dividerIdx;
             const level =
               modelThinking[key] ??
               (isCurrent ? currentThinkingLevel : undefined);
-            let thinkingBadge = "";
-            if (level !== undefined && level.length > 0) {
-              thinkingBadge = ` [thinking: ${level}]`;
-            } else if (m.reasoning) {
-              thinkingBadge = " [reasoning]";
+
+            const quota = isAboveDivider
+              ? formatModelQuotaBadge(m, quotaSnapshot)
+              : undefined;
+            let quotaBadge = "";
+            if (quota !== undefined) {
+              quotaBadge =
+                i === cursor
+                  ? ` ${quota.text}`
+                  : ` ${theme.fg(quota.severity, quota.text)}`;
             }
-            const tags =
-              (isCurrent ? " ●" : "") +
-              (isDef ? " [default]" : "") +
-              thinkingBadge;
-            const text = `${star}${m.name} (${m.provider})${tags}`;
+
+            const text = formatModelRowText({
+              isAboveDivider,
+              isCurrent,
+              isDef,
+              isFav,
+              isHidden,
+              m,
+              quotaBadge,
+              thinkingLevel: level,
+            });
+
             if (i === cursor) {
               lines.push(
                 theme.bg("selectedBg", theme.fg("accent", `▸ ${text}`))
               );
-            } else if (hiddenSet.has(key)) {
+            } else if (isHidden) {
               lines.push(theme.fg("dim", `  ${text}`));
             } else {
               lines.push(`  ${text}`);
@@ -646,16 +1121,22 @@ export const openModelPickerModal = async (
           }
         }
         if (slice.moreBelow) {
-          lines.push(theme.fg("dim", "  ▼"));
+          const total = countModels(rows, winStart, winEnd);
+          const modelsInSlice = countModels(rows, slice.start, slice.end);
+          const countBelow = Math.max(0, total - scroll - modelsInSlice);
+          const label =
+            countBelow === 1 ? "1 more below" : `${countBelow} more below`;
+          lines.push(theme.fg("dim", `  ▼ (${label})`));
         }
       };
 
+      const limit = getVisibleLimit();
       if (dividerIdx === -1) {
-        renderWindow(0, rows.length, modelScroll);
+        renderWindow(0, rows.length, modelScroll, limit);
       } else {
-        renderWindow(0, dividerIdx, favScroll);
+        renderWindow(0, dividerIdx, favScroll, limit);
         lines.push(theme.fg("border", "─".repeat(Math.max(1, width))));
-        renderWindow(dividerIdx + 1, rows.length, modelScroll);
+        renderWindow(dividerIdx + 1, rows.length, modelScroll, limit);
       }
 
       if (!hasSelectable) {
@@ -668,12 +1149,7 @@ export const openModelPickerModal = async (
             theme.fg("dim", " • enter apply • esc clear")
         );
       } else {
-        lines.push(
-          theme.fg(
-            "dim",
-            `${formatNavHint(modalKeys)} nav • ${formatFirstKey(modalKeys.select, "enter")} select • ${formatFirstKey(modalKeys.thinking, "t")} thinking • ${formatFirstKey(modalKeys.default, "d")} default • ${formatFirstKey(modalKeys.favorite, "f")} fav • ${formatFirstKey(modalKeys.hide, "h")} hide • ${formatFirstKey(modalKeys.block, "b")} block • ${formatFirstKey(modalKeys.toggleHidden, "v")} hidden • ${formatFirstKey(modalKeys.filter, "/")} filter • ${formatCancelHint(modalKeys.cancel)} cancel`
-          )
-        );
+        lines.push(theme.fg("dim", formatFooterHelp(modalKeys, width)));
       }
 
       cached = {
@@ -749,8 +1225,7 @@ export const openModelPickerModal = async (
       }
     };
 
-    const handlePickerInput = (data: string): void => {
-      const action = resolvePickerAction(data, filtering, modalKeys);
+    const handleFilterInput = (action: FilterAction): void => {
       switch (action.type) {
         case "filter_cancel": {
           filter = "";
@@ -787,6 +1262,19 @@ export const openModelPickerModal = async (
           tui.requestRender();
           break;
         }
+        default: {
+          break;
+        }
+      }
+    };
+
+    const handlePickerInput = (data: string): void => {
+      const action = resolvePickerAction(data, filtering, modalKeys);
+      if (isFilterAction(action)) {
+        handleFilterInput(action);
+        return;
+      }
+      switch (action.type) {
         case "move": {
           moveCursor(action.delta);
           break;
@@ -801,6 +1289,31 @@ export const openModelPickerModal = async (
         }
         case "open_thinking": {
           openThinkingSelection();
+          break;
+        }
+        case "refresh_quota": {
+          void fetchQuota(pi, agentDir).then((fresh) => {
+            if (fresh !== undefined) {
+              quotaSnapshot = fresh;
+              rebuild();
+              version += 1;
+              cached = undefined;
+              tui.requestRender();
+            }
+            return null;
+          });
+          if (syncOpenCodeEnabled) {
+            void syncOpenCodeDisabledModels(agentDir, true).then((res) => {
+              if (res.changed) {
+                disabledSet = res.disabled;
+                rebuild();
+                version += 1;
+                cached = undefined;
+                tui.requestRender();
+              }
+              return null;
+            });
+          }
           break;
         }
         case "toggle_fav": {

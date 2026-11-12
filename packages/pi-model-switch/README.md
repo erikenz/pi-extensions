@@ -8,7 +8,8 @@ Inspired by `@aiwayds/pi-model-favorites`, rewritten with dedicated global short
 
 ## Features
 
-- ⭐ **Dual-Pane Model Picker**: Your favorite models are pinned at the top separated by a divider, with all other available models cleanly listed below.
+- ⭐ **Dual-Pane Model Picker**: Your favorite models are pinned at the top separated by a divider, with all other available models cleanly grouped by provider below.
+- 📊 **Real-Time Quota Badges**: Displays 5-hour and weekly limits (e.g. `[5h: 86% (resets in 1h 28m) · W: 61%]`), color-coded by severity (green/yellow/red). Works seamlessly with `pi-antigravity-acp-provider` and other providers.
 - ⚡ **Global Shortcut (`Alt+M`)**: Open the model picker modal from anywhere without typing a slash command.
 - 🔁 **Instant Cycling Shortcuts**:
   - `Ctrl+Alt+P`: Cycle forward through your favorite models with an instant toast notification.
@@ -37,6 +38,11 @@ Inspired by `@aiwayds/pi-model-favorites`, rewritten with dedicated global short
   - Blocked models are omitted from favorite cycling (`Ctrl+Alt+P` / `Ctrl+Alt+Shift+P`).
   - Intercepts Pi's global model selection and startup events (`model_select`, `session_start`, `before_agent_start`) to prevent blocked models from being selected or used anywhere in Pi.
   - Manage blocked models directly with `b` in the picker or via `/model-switch block <pattern>`, `/model-switch unblock <pattern>`, and `/model-switch blocked`.
+- 🔄 **Automatic OpenCode Console Sync**:
+  - Automatically queries the OpenCode console API (`https://opencode.ai/console/api/v2/config`) using your configured API keys in `auth.json`.
+  - Dynamically filters out all models disabled in your OpenCode console across `opencode` and `opencode-go`, so the picker only presents active, usable models.
+  - Zero startup latency: loads instant cache from `~/.config/pi/agent/opencode-disabled-models.json` and updates in the background.
+  - Trigger manual re-sync at any time with **`r`** inside the picker or via `/model-switch sync`.
 - 💾 **Clean, Self-Contained Storage**:
   - Saves favorite, hidden, blocked, and per-model thinking preferences directly to `~/.config/pi/agent/model-switch.json`.
 
@@ -93,6 +99,7 @@ ln -s ~/Projects/pi-extensions/packages/pi-model-switch/extensions/index.ts ~/.c
 | `b` | Inside Picker | Block focused model from picker and Pi |
 | `v` | Inside Picker | Toggle show/hide hidden models |
 | `/` | Inside Picker | Start filter / search |
+| `r` | Inside Picker | Refresh live quotas and OpenCode console disabled models in background |
 | `q` / `Esc` | Inside Picker | Cancel and close |
 
 ---

@@ -233,6 +233,10 @@ export const loadConfig = (): ModelSwitchConfig => {
     const shortcuts = isRecord(parsed.shortcuts)
       ? (parsed.shortcuts as ShortcutConfig)
       : undefined;
+    const syncOpenCode =
+      typeof parsed.syncOpenCode === "boolean"
+        ? parsed.syncOpenCode
+        : undefined;
 
     return {
       blocked,
@@ -242,6 +246,7 @@ export const loadConfig = (): ModelSwitchConfig => {
       modelThinking: toStringRecord(parsed.modelThinking),
       models,
       shortcuts,
+      syncOpenCode,
     };
   } catch {
     return { blocked: [], favorites: [], hidden: [], modelThinking: {} };
@@ -265,6 +270,7 @@ export const saveConfig = (
       modalKeys: newConfig.modalKeys ?? existing.modalKeys,
       modelThinking: newConfig.modelThinking ?? existing.modelThinking ?? {},
       shortcuts: newConfig.shortcuts ?? existing.shortcuts,
+      syncOpenCode: newConfig.syncOpenCode ?? existing.syncOpenCode,
     };
     if (newConfig.models !== undefined || existing.models !== undefined) {
       merged.models = newConfig.models ?? existing.models;
