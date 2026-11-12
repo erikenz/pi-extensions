@@ -35,6 +35,27 @@ export interface ModelLike {
   name?: string;
 }
 
+export interface QuotaBucket {
+  window: string;
+  remainingFraction: number;
+  resetTime?: string;
+}
+
+export interface QuotaGroup {
+  displayName: string;
+  buckets: QuotaBucket[];
+}
+
+export interface QuotaSnapshot {
+  at: number;
+  groups: QuotaGroup[];
+}
+
+export interface QuotaBadgeResult {
+  text: string;
+  severity: "success" | "warning" | "error";
+}
+
 export interface ShortcutConfig {
   open?: KeyBindingSetting;
   cycleNext?: KeyBindingSetting;
@@ -92,12 +113,19 @@ export interface ModelSwitchConfig {
   modelThinking?: Record<string, string>;
   shortcuts?: ShortcutConfig;
   modalKeys?: ModalKeyConfig;
+  syncOpenCode?: boolean;
 }
 
 export type Row =
   | { kind: "model"; model: Model<Api> }
   | { kind: "divider" }
-  | { kind: "header"; label: string };
+  | {
+      kind: "header";
+      label: string;
+      provider?: string;
+      subgroup?: string;
+      quotaBadge?: QuotaBadgeResult;
+    };
 
 export interface WindowSliceResult {
   start: number;
@@ -106,7 +134,14 @@ export interface WindowSliceResult {
   moreBelow: boolean;
 }
 
-export type PickerAction =
+export type FilterAction =
+  | { type: "filter_char"; char: string }
+  | { type: "filter_backspace" }
+  | { type: "filter_apply" }
+  | { type: "filter_cancel" }
+  | { type: "start_filter" };
+
+export type NavigationAction =
   | { type: "move"; delta: number }
   | { type: "jump_first" }
   | { type: "jump_last" }
@@ -115,15 +150,13 @@ export type PickerAction =
   | { type: "toggle_hide" }
   | { type: "toggle_show_hidden" }
   | { type: "toggle_block" }
-  | { type: "start_filter" }
   | { type: "open_thinking" }
+  | { type: "refresh_quota" }
   | { type: "select" }
   | { type: "cancel" }
-  | { type: "filter_char"; char: string }
-  | { type: "filter_backspace" }
-  | { type: "filter_apply" }
-  | { type: "filter_cancel" }
   | { type: "ignore" };
+
+export type PickerAction = FilterAction | NavigationAction;
 
 export type ThinkingAction =
   | { type: "move"; delta: number }

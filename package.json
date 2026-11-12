@@ -8,11 +8,13 @@
   "type": "module",
   "scripts": {
     "test": "pnpm -r test",
+    "dev": "fish scripts/dev.fish",
     "typecheck": "tsc --noEmit",
     "check": "ultracite check",
     "fix": "ultracite fix"
   },
   "devDependencies": {
+    "@clack/prompts": "^1.9.0",
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
@@ -20,6 +22,7 @@
     "oxfmt": "^0.77.0",
     "oxlint": "^1.90.0",
     "oxlint-tsgolint": "^7.0.2005",
+    "picocolors": "^1.1.1",
     "typescript": "^7.0.2",
     "ultracite": "8.1.1"
   },
