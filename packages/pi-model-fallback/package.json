@@ -1,6 +1,6 @@
 {
   "name": "@erikenz/pi-model-fallback",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Automatic model failover chains with cooldowns for the Pi coding agent.",
   "keywords": [
     "ai",
