@@ -1,0 +1,48 @@
+{
+  "name": "@erikenz/pi-model-fallback",
+  "version": "0.1.1",
+  "description": "Automatic model failover chains with cooldowns for the Pi coding agent.",
+  "keywords": [
+    "ai",
+    "failover",
+    "fallback",
+    "model-fallback",
+    "pi-extension",
+    "pi-package",
+    "rate-limit"
+  ],
+  "license": "MIT",
+  "author": "erikenz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/erikenz/pi-extensions.git",
+    "directory": "packages/pi-model-fallback"
+  },
+  "files": [
+    "extensions",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ]
+  }
+}

@@ -6,6 +6,7 @@ A collection of extensions and packages for the [Pi coding agent](https://github
 
 | Package | Version | Description |
 | :-- | :-- | :-- |
+| [`@erikenz/pi-model-fallback`](./packages/pi-model-fallback) | [![npm](https://img.shields.io/npm/v/@erikenz/pi-model-fallback.svg)](https://www.npmjs.com/package/@erikenz/pi-model-fallback) | Automatic model failover chains with cooldowns for Pi. |
 | [`@erikenz/pi-model-switch`](./packages/pi-model-switch) | [![npm](https://img.shields.io/npm/v/@erikenz/pi-model-switch.svg)](https://www.npmjs.com/package/@erikenz/pi-model-switch) | Fast model picker and favorite model cycling shortcuts for Pi. |
 
 ## Development
