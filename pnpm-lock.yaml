@@ -42,6 +42,15 @@ importers:
         specifier: 8.1.1
         version: 8.1.1(oxfmt@0.77.0)(oxlint@1.92.0(oxlint-tsgolint@7.0.2006))
 
+  packages/pi-model-fallback:
+    devDependencies:
+      '@earendil-works/pi-ai':
+        specifier: '*'
+        version: 1.5.0(@aws-sdk/credential-provider-node@3.972.93)(@smithy/signature-v4@5.7.5)(undici@8.12.3)(ws@8.22.1)(zod@4.6.7)
+      '@earendil-works/pi-coding-agent':
+        specifier: '*'
+        version: 1.5.0(@aws-sdk/credential-provider-node@3.972.93)(@smithy/signature-v4@5.7.5)(ws@8.22.1)(zod@4.6.7)
+
   packages/pi-model-switch:
     dependencies:
       '@earendil-works/pi-ai':
