@@ -20,12 +20,12 @@
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
     "@types/node": "^26.6.6",
-    "oxfmt": "^0.77.0",
-    "oxlint": "^1.90.0",
-    "oxlint-tsgolint": "^7.0.2005",
+    "oxfmt": "^0.78.0",
+    "oxlint": "^1.93.0",
+    "oxlint-tsgolint": "^7.0.2007",
     "picocolors": "^1.1.1",
     "typescript": "^7.0.2",
-    "ultracite": "8.1.1"
+    "ultracite": "8.2.0"
   },
   "engines": {
     "node": ">=18"
